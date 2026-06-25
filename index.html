@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alfa.crm</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* СВЕТЛАЯ ТЕМА (по умолчанию) */
+:root, [data-theme="light"]{
+  --bg:#f4f5f7;--bg2:#ffffff;--bg3:#eef0f3;--bg4:#e2e5ea;
+  --br:#00000010;--br2:#00000018;--br3:#00000028;
+  --tx:#1a1a2e;--tx2:#5a6072;--tx3:#9499a8;
+  --green:#16a34a;--red:#dc2626;--amber:#d97706;
+  --blue:#2563eb;--purple:#7c3aed;--teal:#0d9488;--pink:#db2777;
+  --shadow:0 1px 3px #00000012;
+}
+/* ТЁМНАЯ ТЕМА */
+[data-theme="dark"]{
+  --bg:#0d0d10;--bg2:#16161b;--bg3:#1e1e26;--bg4:#26262f;
+  --br:#ffffff0e;--br2:#ffffff1a;--br3:#ffffff28;
+  --tx:#ececec;--tx2:#9098b0;--tx3:#646878;
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --blue:#60a5fa;--purple:#a78bfa;--teal:#2dd4bf;--pink:#f472b6;
+  --shadow:0 1px 3px #00000030;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--tx);font-size:13px;-webkit-text-size-adjust:100%}
+/* BAR */
+.bar{display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--br);background:var(--bg2);height:52px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.logo{font-size:15px;font-weight:700;letter-spacing:-.5px;flex-shrink:0}
+.logo em{color:var(--purple);font-style:normal}
+/* PERIOD TABS - два ряда */
+.ptabs-wrap{display:flex;flex-direction:column;gap:3px;flex-shrink:0}
+.ptabs{display:flex;gap:2px;background:var(--bg3);border-radius:7px;padding:2px}
+.ptab{padding:3px 10px;border-radius:5px;border:none;background:transparent;color:var(--tx2);font-size:11px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.ptab.on{background:var(--bg4);color:var(--tx);font-weight:500}
+.sep{width:1px;height:18px;background:var(--br2);flex-shrink:0}
+.di{display:flex;align-items:center;gap:4px}
+.di input{background:var(--bg3);border:1px solid var(--br2);border-radius:7px;padding:4px 7px;color:var(--tx);font-size:11px;width:105px}
+[data-theme="light"] .di input::-webkit-calendar-picker-indicator{filter:none}
+[data-theme="dark"] .di input::-webkit-calendar-picker-indicator{filter:invert(1)}
+.di input:focus{outline:none;border-color:var(--purple)}
+.aply{padding:4px 9px;border-radius:7px;border:1px solid var(--purple);background:#a78bfa15;color:var(--purple);font-size:11px;cursor:pointer}
+.aply:hover{background:var(--purple);color:#fff}
+/* NAV */
+.navtabs{display:flex;gap:2px;background:var(--bg3);border-radius:8px;padding:3px;flex-shrink:0}
+.ntab{padding:4px 12px;border-radius:6px;border:none;background:transparent;color:var(--tx2);font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.ntab.on{background:var(--bg4);color:var(--tx);font-weight:500}
+.ml{margin-left:auto;display:flex;align-items:center;gap:8px}
+.plbl{font-size:11px;color:var(--tx3);padding:3px 8px;background:var(--bg3);border-radius:6px;border:1px solid var(--br);white-space:nowrap}
+.upd{font-size:11px;color:var(--tx3)}
+.btn{padding:5px 10px;border-radius:7px;border:1px solid var(--br2);background:transparent;color:var(--tx2);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all .15s}
+.btn:hover{background:var(--bg3);color:var(--tx)}
+.btn:disabled{opacity:.4;pointer-events:none}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--br2);border-top-color:var(--purple);border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* SETUP */
+.setup{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 52px)}
+.sc{background:var(--bg2);border:1px solid var(--br);border-radius:16px;padding:32px;max-width:460px;width:100%}
+.sc h2{font-size:18px;font-weight:500;margin-bottom:8px}
+.sc p{color:var(--tx2);line-height:1.6;margin-bottom:16px;font-size:13px}
+.si{width:100%;background:var(--bg3);border:1px solid var(--br2);border-radius:8px;padding:10px 14px;color:var(--tx);font-size:13px;margin-bottom:10px}
+.si:focus{outline:none;border-color:var(--purple)}
+.sb{width:100%;padding:11px;border-radius:8px;border:none;background:var(--purple);color:#fff;font-size:14px;font-weight:500;cursor:pointer}
+.sb:hover{opacity:.85}
+.serr{color:var(--red);font-size:12px;margin-top:6px}
+/* MAIN */
+.main{display:none;padding:14px 16px 24px}
+.lov{display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:80px;color:var(--tx2);font-size:13px}
+.lsp{width:28px;height:28px;border:3px solid var(--br2);border-top-color:var(--purple);border-radius:50%;animation:sp .8s linear infinite}
+.page{display:none}.page.on{display:block}
+/* METRICS */
+.mrow{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
+.mc{background:var(--bg2);border:1px solid var(--br);border-radius:12px;padding:13px 15px;box-shadow:var(--shadow)}
+.mlb{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.mv{font-size:26px;font-weight:700;line-height:1}
+.ms{font-size:11px;color:var(--tx2);margin-top:3px}
+.mdf{font-size:11px;font-weight:500;margin-top:3px;min-height:15px}
+.up{color:var(--green)}.dn{color:var(--red)}.eq{color:var(--tx3)}
+/* CARDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+.card{background:var(--bg2);border:1px solid var(--br);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+.ct{font-size:10px;font-weight:500;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+.nd{color:var(--tx3);font-size:12px}
+/* FUNNEL */
+.fr{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.fl{font-size:12px;color:var(--tx2);width:155px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb{flex:1;background:var(--bg3);border-radius:4px;height:22px;overflow:hidden}
+.fbi{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;transition:width .5s}
+.fbi span{font-size:11px;font-weight:500;color:#fff;white-space:nowrap}
+.fc{font-size:12px;color:var(--tx2);width:34px;text-align:right;flex-shrink:0}
+.fd{font-size:11px;font-weight:500;width:40px;text-align:right;flex-shrink:0}
+/* MANAGERS */
+.mr{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--br)}
+.mr:last-child{border-bottom:none}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.mn{font-size:13px;font-weight:500;flex:1}
+.mss{display:flex;gap:12px}
+.mst{text-align:center}
+.msv{font-size:14px;font-weight:600}
+.msl{font-size:10px;color:var(--tx3)}
+/* GEO */
+.city-block{margin-bottom:10px}
+.city-hdr{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;cursor:pointer;border:1px solid var(--br2)}
+.city-hdr:hover{background:var(--bg4)}
+.city-name{font-size:13px;font-weight:600;flex:1}
+.city-stats{display:flex;gap:14px;font-size:12px}
+.cst{text-align:right}
+.cst-v{font-weight:600}
+.cst-l{font-size:10px;color:var(--tx3)}
+.chv{font-size:12px;color:var(--tx3);transition:transform .2s;flex-shrink:0}
+.chv.open{transform:rotate(90deg)}
+.city-body{display:none;padding:8px 0 0 12px}
+.city-body.open{display:block}
+.site-block{margin-bottom:8px;border-left:2px solid var(--br2);padding-left:10px}
+.site-hdr{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border-radius:6px;cursor:pointer;border:1px solid var(--br)}
+.site-hdr:hover{background:var(--bg4)}
+.site-name{font-size:12px;font-weight:500;flex:1}
+.site-body{display:none;padding:4px 0 0 8px}
+.site-body.open{display:block}
+.src-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--br)}
+.src-row:last-child{border-bottom:none}
+/* DONUT */
+.donut-wrap{display:flex;gap:20px;flex-wrap:wrap}
+.donut-block{flex:1;min-width:180px}
+.donut-ttl{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.donut-canvas{width:160px!important;height:160px!important;margin:0 auto 10px}
+.dl-row{display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0}
+.dl-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.dl-name{flex:1;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-pct{font-weight:600;min-width:30px;text-align:right}
+.dl-cnt{color:var(--tx3);min-width:30px;text-align:right;font-size:10px}
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{text-align:left;font-size:10px;font-weight:500;color:var(--tx3);padding:5px 8px;border-bottom:1px solid var(--br);text-transform:uppercase;letter-spacing:.04em}
+.tbl td{padding:7px 8px;border-bottom:1px solid var(--br);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--bg3)}
+.tbl.fixed{table-layout:fixed}
+/* BADGE */
+.badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;display:inline-block}
+.bg{background:#16a34a22;color:#15803d}
+.ba{background:#d9770622;color:#b45309}
+.br2{background:#dc262622;color:#b91c1c}
+.bgr{background:var(--bg3);color:var(--tx3)}
+[data-theme="dark"] .bg{background:#4ade8018;color:#4ade80}
+[data-theme="dark"] .ba{background:#fbbf2418;color:#fbbf24}
+[data-theme="dark"] .br2{background:#f8717118;color:#f87171}
+/* STABS */
+.stabs{display:flex;gap:5px;margin-bottom:12px}
+.stab{padding:5px 12px;border-radius:7px;border:1px solid var(--br2);background:transparent;color:var(--tx2);font-size:12px;cursor:pointer;transition:all .15s}
+.stab.on{background:#a78bfa22;border-color:var(--purple);color:var(--purple);font-weight:500}
+/* CHART */
+.chart-wrap{position:relative;width:100%}
+.lr{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--br)}
+.lr:last-child{border-bottom:none}
+/* MMET */
+.mmet{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+/* YA TAG */
+.ya-tag{font-size:11px;padding:2px 8px;border-radius:6px;background:#fc3f1d18;color:#fc3f1d;font-weight:500}
+@media(max-width:1100px){.mrow{grid-template-columns:repeat(3,1fr)}.mmet{grid-template-columns:repeat(3,1fr)}.g3{grid-template-columns:1fr 1fr}}
+@media(max-width:768px){
+  /* Топбар вертикально */
+  .bar{height:auto;padding:8px 12px;gap:6px}
+  .ptabs-wrap{width:100%;order:3}
+  .ptabs{width:100%;justify-content:space-between}
+  .ptab{flex:1;text-align:center;padding:6px 4px;font-size:11px}
+  .sep{display:none}
+  .di{order:5;width:100%;justify-content:center}
+  .di input{flex:1;font-size:13px;padding:7px 8px}
+  .navtabs{order:2;width:100%;justify-content:space-between}
+  .ntab{flex:1;text-align:center;padding:7px 4px;font-size:12px}
+  .ml{order:1;width:100%;margin-left:0;justify-content:space-between}
+  .logo{order:0}
+  /* Метрики по 2 в ряд крупнее */
+  .mrow{grid-template-columns:repeat(2,1fr);gap:8px}
+  .mmet{grid-template-columns:repeat(2,1fr);gap:8px}
+  .g2,.g3{grid-template-columns:1fr}
+  .mv{font-size:24px}
+  .mc{padding:12px}
+  /* Таблицы скроллятся горизонтально */
+  .card{padding:12px;overflow-x:auto}
+  .tbl{min-width:520px}
+  .tbl.fixed{min-width:560px}
+  /* Воронка читаемее */
+  .fl{width:110px;font-size:11px}
+  /* Главная страница padding меньше */
+  .main{padding:10px 8px 20px}
+  /* Гео блоки */
+  .city-stats{gap:8px;font-size:11px}
+  .donut-wrap{flex-direction:column}
+  .donut-canvas{width:200px!important;height:200px!important}
+}
+@media(max-width:420px){
+  .mrow{grid-template-columns:1fr 1fr;gap:6px}
+  .mv{font-size:20px}
+  .mlb{font-size:9px}
+  .ntab{font-size:11px;padding:6px 2px}
+  .ptab{font-size:10px}
+  .logo{font-size:14px}
+}
+</style>
+</head>
+<body>
+<!-- ПАРОЛЬ -->
+<div id="pwgate" style="position:fixed;inset:0;z-index:9999;background:#0d0d10;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="background:#16161b;border:1px solid #ffffff14;border-radius:16px;padding:36px;max-width:360px;width:90%;text-align:center">
+    <div style="font-size:22px;font-weight:700;color:#ececec;margin-bottom:6px">alfa<span style="color:#a78bfa">.</span>crm</div>
+    <div style="font-size:13px;color:#9098b0;margin-bottom:20px">Введите пароль для доступа</div>
+    <input type="password" id="pwInput" placeholder="Пароль" style="width:100%;background:#1e1e26;border:1px solid #ffffff1a;border-radius:8px;padding:11px 14px;color:#ececec;font-size:14px;margin-bottom:12px;text-align:center" onkeydown="if(event.key==='Enter')checkPw()">
+    <button onclick="checkPw()" style="width:100%;padding:11px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:500;cursor:pointer">Войти</button>
+    <div id="pwErr" style="color:#f87171;font-size:12px;margin-top:10px;min-height:16px"></div>
+  </div>
+</div>
+
+<script>
+// ПАРОЛЬ — измените значение ниже на свой
+const DASHBOARD_PASSWORD = 'MisterChe2026';
+
+function checkPw(){
+  const val = document.getElementById('pwInput').value;
+  if(val === DASHBOARD_PASSWORD){
+    sessionStorage.setItem('alfa_authed','yes');
+    document.getElementById('pwgate').style.display='none';
+  } else {
+    document.getElementById('pwErr').textContent = 'Неверный пароль';
+    document.getElementById('pwInput').value = '';
+  }
+}
+
+// Если уже авторизован в этой сессии — пропускаем
+if(sessionStorage.getItem('alfa_authed')==='yes'){
+  document.addEventListener('DOMContentLoaded',()=>{
+    const g=document.getElementById('pwgate');
+    if(g) g.style.display='none';
+  });
+}
+</script>
+
+<div style="min-height:100vh;display:grid;grid-template-rows:52px 1fr">
+
+<!-- BAR -->
+<div class="bar">
+  <div class="logo">alfa<em>.</em>crm</div>
+
+  <div class="ptabs-wrap">
+    <div class="ptabs" id="ptabs1">
+      <button class="ptab on" data-p="today">Сегодня</button>
+      <button class="ptab" data-p="this_week">Эта неделя</button>
+      <button class="ptab" data-p="this_month">Этот месяц</button>
+      <button class="ptab" data-p="90days">90 дней</button>
+    </div>
+    <div class="ptabs" id="ptabs2">
+      <button class="ptab" data-p="yesterday">Вчера</button>
+      <button class="ptab" data-p="last_week">Прошлая неделя</button>
+      <button class="ptab" data-p="last_month">Прошлый месяц</button>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="di">
+    <input type="date" id="df"><span style="color:var(--tx3)">—</span>
+    <input type="date" id="dt">
+    <button class="aply" onclick="applyRange()">OK</button>
+  </div>
+  <div class="sep"></div>
+
+  <div class="navtabs" id="navtabs">
+    <button class="ntab on" data-pg="crm">CRM</button>
+    <button class="ntab" data-pg="calls">Звонки</button>
+    <button class="ntab" data-pg="metrika">Метрика</button>
+    <button class="ntab" data-pg="direct">Директ</button>
+  </div>
+
+  <div class="ml">
+    <span class="plbl" id="plbl"></span>
+    <span class="upd" id="upd"></span>
+    <button class="btn" id="themeBtn" onclick="toggleTheme()" style="padding:5px 9px" title="Сменить тему">☀️</button>
+    <button class="btn" id="rbtn" onclick="load()">
+      <span class="spin" id="rspin" style="display:none"></span>
+      <span id="rlbl">↻</span>
+    </button>
+    <button class="btn" onclick="resetSetup()" style="padding:5px 8px">⚙</button>
+  </div>
+</div>
+
+<!-- SETUP -->
+<div id="setup" class="setup">
+  <div class="sc">
+    <h2>Подключение</h2>
+    <p>Вставьте ссылку на Google Apps Script веб-приложение.</p>
+    <input class="si" id="aurl" placeholder="https://script.google.com/macros/s/XXXX/exec">
+    <button class="sb" onclick="connect()">Подключить</button>
+    <div class="serr" id="serr"></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main" class="main">
+  <div class="lov" id="lov"><div class="lsp"></div><span id="ltxt">Загружаем данные...</span></div>
+  <div id="dash" style="display:none">
+
+    <!-- CRM -->
+    <div class="page on" id="page-crm">
+      <div class="mrow">
+        <div class="mc"><div class="mlb">Лидов</div><div class="mv" id="m0">—</div><div class="ms">за период</div><div class="mdf" id="m0d"></div></div>
+        <div class="mc"><div class="mlb">Купили</div><div class="mv" style="color:var(--green)" id="m1">—</div><div class="ms">покупок</div><div class="mdf" id="m1d"></div></div>
+        <div class="mc"><div class="mlb">Конверсия</div><div class="mv" id="m2">—</div><div class="ms" id="m2s"></div><div class="mdf" id="m2d"></div></div>
+        <div class="mc"><div class="mlb">В магазин</div><div class="mv" style="color:var(--teal)" id="m3">—</div><div class="ms" id="m3s"></div><div class="mdf" id="m3d"></div></div>
+        <div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--red)" id="m4">—</div><div class="ms" id="m4s"></div><div class="mdf" id="m4d"></div></div>
+        <div class="mc"><div class="mlb">В работе</div><div class="mv" style="color:var(--blue)" id="m5">—</div><div class="ms">активных</div><div class="mdf" id="m5d"></div></div>
+      </div>
+      <div class="g2">
+        <div class="card"><div class="ct">Воронка (накопительно)</div><div id="funnel"></div></div>
+        <div class="card"><div class="ct">Менеджеры</div><div id="mgrs"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct">Город → Сайт → Источник</div>
+        <div id="geo"></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct">Структура по источникам</div>
+        <div class="donut-wrap">
+          <div class="donut-block"><div class="donut-ttl">Заявки</div><canvas class="donut-canvas" id="dleads"></canvas><div id="dleads-leg"></div></div>
+          <div class="donut-block"><div class="donut-ttl">Продажи</div><canvas class="donut-canvas" id="dbought"></canvas><div id="dbought-leg"></div></div>
+        </div>
+      </div>
+      <!-- ВОРОНКИ ПО САЙТАМ -->
+      <div class="g2" style="margin-bottom:12px">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <div class="ct" style="margin-bottom:0">Воронка faamo.ru</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#2dd4bf18;color:#2dd4bf;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+          </div>
+          <table class="tbl fixed" style="margin-bottom:10px">
+            <thead><tr>
+              <th style="width:30%">Этап</th>
+              <th style="width:12%;text-align:right">Кол-во</th>
+              <th style="width:20%;text-align:center">Из пред.</th>
+              <th style="width:20%;text-align:center">Из заявки</th>
+              <th style="width:18%">Бар</th>
+            </tr></thead>
+            <tbody id="faamo-funnel-tbody"></tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="faamo-metrics"></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <div class="ct" style="margin-bottom:0">Воронка alfa-collection.ru</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#a78bfa18;color:#a78bfa;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+          </div>
+          <table class="tbl fixed" style="margin-bottom:10px">
+            <thead><tr>
+              <th style="width:30%">Этап</th>
+              <th style="width:12%;text-align:right">Кол-во</th>
+              <th style="width:20%;text-align:center">Из пред.</th>
+              <th style="width:20%;text-align:center">Из заявки</th>
+              <th style="width:18%">Бар</th>
+            </tr></thead>
+            <tbody id="alfa-funnel-tbody"></tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="alfa-metrics"></div>
+        </div>
+      </div>
+
+      <div class="g2">
+        <div class="card"><div class="ct">Динамика лидов</div><div class="chart-wrap" style="height:160px"><canvas id="tchart"></canvas></div></div>
+        <div class="card">
+          <div class="ct">Где теряются лиды</div>
+          <div id="lost"></div>
+          <div class="ct" style="margin-top:16px">Причины отказов</div>
+          <div id="refusal-reasons"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ЗВОНКИ -->
+    <div class="page" id="page-calls">
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <div class="ct" style="margin-bottom:0">CALLTOUCH</div>
+        <div class="stabs" id="ct-stabs" style="margin-bottom:0">
+          <button class="stab on" data-ct="alfa-collection.ru">alfa-collection.ru</button>
+          <button class="stab" data-ct="faamo.ru">faamo.ru</button>
+        </div>
+      </div>
+      <div id="ct-alfa-collection.ru">
+        <div class="mmet" id="ct-m-alfa"></div>
+        <div class="g2">
+          <div class="card">
+            <div class="ct">По источникам рекламы</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:28%">Источник</th>
+              <th style="width:14%;text-align:right">Всего</th>
+              <th style="width:14%;text-align:right">Принято</th>
+              <th style="width:14%;text-align:right">Пропущено</th>
+              <th style="width:15%;text-align:right">Целевых</th>
+              <th style="width:15%;text-align:right">% принятых</th>
+            </tr></thead><tbody id="ct-src-alfa"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="ct">По городам</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:40%">Город</th>
+              <th style="width:20%;text-align:right">Звонков</th>
+              <th style="width:20%;text-align:right">Принято</th>
+              <th style="width:20%;text-align:right">%</th>
+            </tr></thead><tbody id="ct-city-alfa"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div id="ct-faamo.ru" style="display:none">
+        <div class="mmet" id="ct-m-faamo"></div>
+        <div class="g2">
+          <div class="card">
+            <div class="ct">По источникам рекламы</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:28%">Источник</th>
+              <th style="width:14%;text-align:right">Всего</th>
+              <th style="width:14%;text-align:right">Принято</th>
+              <th style="width:14%;text-align:right">Пропущено</th>
+              <th style="width:15%;text-align:right">Целевых</th>
+              <th style="width:15%;text-align:right">% принятых</th>
+            </tr></thead><tbody id="ct-src-faamo"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="ct">По городам</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:40%">Город</th>
+              <th style="width:20%;text-align:right">Звонков</th>
+              <th style="width:20%;text-align:right">Принято</th>
+              <th style="width:20%;text-align:right">%</th>
+            </tr></thead><tbody id="ct-city-faamo"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- МЕТРИКА -->
+    <div class="page" id="page-metrika">
+      <div class="stabs" id="m-stabs">
+        <button class="stab on" data-ms="alfa-collection.ru">alfa-collection.ru</button>
+        <button class="stab" data-ms="faamo.ru">faamo.ru</button>
+      </div>
+      <div id="ms-alfa-collection.ru">
+        <div class="mmet" id="mm-alfa"></div>
+        <div class="g2">
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div class="ct" style="margin-bottom:0">Источники</div>
+              <div class="stabs" id="src-tabs-alfa" style="margin-bottom:0">
+                <button class="stab on" onclick="switchSrcTab('alfa','ch')">Каналы</button>
+                <button class="stab" onclick="switchSrcTab('alfa','utm')">UTM</button>
+              </div>
+            </div>
+            <div id="src-ch-alfa">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">Канал</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="src-alfa"></tbody></table>
+            </div>
+            <div id="src-utm-alfa" style="display:none">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">utm_source</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="utm-alfa"></tbody></table>
+            </div>
+          </div>
+          <div class="card"><div class="ct">Визиты по дням</div><div class="chart-wrap" style="height:200px"><canvas id="mchart-alfa"></canvas></div></div>
+        </div>
+      </div>
+      <div id="ms-faamo.ru" style="display:none">
+        <div class="mmet" id="mm-faamo"></div>
+        <div class="g2">
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div class="ct" style="margin-bottom:0">Источники</div>
+              <div class="stabs" id="src-tabs-faamo" style="margin-bottom:0">
+                <button class="stab on" onclick="switchSrcTab('faamo','ch')">Каналы</button>
+                <button class="stab" onclick="switchSrcTab('faamo','utm')">UTM</button>
+              </div>
+            </div>
+            <div id="src-ch-faamo">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">Канал</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="src-faamo"></tbody></table>
+            </div>
+            <div id="src-utm-faamo" style="display:none">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">utm_source</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="utm-faamo"></tbody></table>
+            </div>
+          </div>
+          <div class="card"><div class="ct">Визиты по дням</div><div class="chart-wrap" style="height:200px"><canvas id="mchart-faamo"></canvas></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ДИРЕКТ -->
+    <div class="page" id="page-direct">
+      <div class="mmet" id="dir-summary"></div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Кампании</div>
+          <span class="ya-tag">Яндекс Директ</span>
+          <span id="dir-total" style="font-size:12px;color:var(--tx2)"></span>
+        </div>
+        <table class="tbl fixed"><thead><tr>
+          <th style="width:28%">Кампания</th><th style="width:11%">Тип</th>
+          <th style="width:10%;text-align:right">Клики</th><th style="width:11%;text-align:right">Показы</th>
+          <th style="width:8%;text-align:right">CTR</th><th style="width:11%;text-align:right">Расход ₽</th>
+          <th style="width:9%;text-align:right">Ср.клик</th><th style="width:6%;text-align:right">Заявки</th>
+          <th style="width:6%;text-align:right">CPL</th>
+        </tr></thead><tbody id="dir-camps"></tbody></table>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Ключевые слова</div>
+          <span class="ya-tag">Директ + CRM</span>
+        </div>
+        <table class="tbl fixed"><thead><tr>
+          <th style="width:26%">Ключевое слово</th><th style="width:18%">Кампания</th>
+          <th style="width:9%;text-align:right">Клики</th><th style="width:10%;text-align:right">Расход ₽</th>
+          <th style="width:7%;text-align:right">CTR</th><th style="width:8%;text-align:right">Ср.клик</th>
+          <th style="width:8%;text-align:right">Заявки</th><th style="width:7%;text-align:right">Куплено</th>
+          <th style="width:7%;text-align:right">Конв.</th>
+        </tr></thead><tbody id="dir-kws"></tbody></table>
+      </div>
+
+      <!-- ГОРОД → КАНАЛ → ЛИДЫ → ПРОДАЖИ → РАСХОД -->
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div class="ct" style="margin-bottom:0">Город → Канал → Результат</div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#4ade8018;color:#4ade80;font-weight:500">CRM + расходы Директа</span>
+        </div>
+        <div id="city-channel-wrap"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+let API='', period='today', cFrom=null, cTo=null, raw=null, prev=null, currentTab='crm';
+let tChart=null, mCharts={};
+const AC=['#a78bfa','#2dd4bf','#fbbf24','#60a5fa','#4ade80','#f87171','#f97316','#f472b6','#818cf8','#34d399'];
+const FC=['#a78bfa','#60a5fa','#fbbf24','#f97316','#f472b6','#4ade80'];
+const PERIOD_LABELS={today:'Сегодня',yesterday:'Вчера',this_week:'Эта неделя',last_week:'Прошлая неделя',this_month:'Этот месяц',last_month:'Прошлый месяц','90days':'90 дней'};
+
+function connect(){
+  const v=document.getElementById('aurl').value.trim();
+  if(!v.startsWith('https://script.google.com')){document.getElementById('serr').textContent='Неверная ссылка';return;}
+  API=v;localStorage.setItem('alfa_api_v2',v);
+  document.getElementById('setup').style.display='none';
+  document.getElementById('main').style.display='block';
+  load();
+}
+function resetSetup(){document.getElementById('setup').style.display='flex';document.getElementById('main').style.display='none';}
+
+function setLoading(v){
+  document.getElementById('rspin').style.display=v?'inline-block':'none';
+  document.getElementById('rlbl').textContent=v?'...':'↻';
+  document.getElementById('rbtn').disabled=v;
+  document.getElementById('lov').style.display=v?'flex':'none';
+  document.getElementById('dash').style.display=v?'none':'block';
+}
+
+function buildUrl(){
+  if(cFrom&&cTo) return API+'?from='+cFrom+'&to='+cTo;
+  return API+'?period='+period;
+}
+
+function prevUrl(){
+  const map={today:'yesterday',this_week:'last_week',this_month:'last_month'};
+  if(map[period]) return API+'?period='+map[period];
+  return null;
+}
+
+async function load(){
+  setLoading(true);
+  try{
+    const r=await fetch(buildUrl());
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    raw=await r.json();
+    if(raw.error)throw new Error(raw.error);
+
+    // populate period label
+    document.getElementById('plbl').textContent = cFrom&&cTo ? fmtd(cFrom)+' — '+fmtd(cTo) : (PERIOD_LABELS[period]||period);
+    document.getElementById('upd').textContent = raw.updatedAt||'';
+
+    // prev period for comparison
+    prev=null;
+    const pu=prevUrl();
+    if(pu){try{const r2=await fetch(pu);prev=await r2.json();if(prev.error)prev=null;}catch(e){}}
+
+    renderAll();
+  }catch(e){
+    document.getElementById('lov').style.display='flex';
+    document.getElementById('lov').innerHTML=`<div style="color:var(--red);text-align:center;font-size:13px">Ошибка: ${e.message}<br><br><button class="btn" onclick="load()" style="margin:0 auto">↻ Повторить</button></div>`;
+    document.getElementById('dash').style.display='none';
+    return;
+  }
+  setLoading(false);
+}
+
+function fmtd(s){const d=new Date(s);return d.getDate().toString().padStart(2,'0')+'.'+(d.getMonth()+1).toString().padStart(2,'0')+'.'+(d.getFullYear()+'').slice(2);}
+function fmtSec(s){if(!s)return'0с';if(s<60)return s+'с';return Math.floor(s/60)+'м '+(s%60)+'с';}
+function cc(c){return c>=30?'var(--green)':c>=15?'var(--amber)':'var(--red)';}
+function axisColor(){return document.documentElement.getAttribute('data-theme')==='dark'?'#646878':'#9499a8';}
+function gridColor(){return document.documentElement.getAttribute('data-theme')==='dark'?'#ffffff07':'#00000008';}
+
+function dif(id,curr,pv){
+  const el=document.getElementById(id); if(!el)return;
+  if(pv==null||pv===0){el.textContent='';el.className='mdf eq';return;}
+  const p=Math.round((curr-pv)/pv*100);
+  el.className='mdf '+(p>0?'up':p<0?'dn':'eq');
+  el.textContent=(p>0?'+':'')+p+'% vs пред.';
+}
+
+function renderRefusalReasons(reasons) {
+  const el = document.getElementById('refusal-reasons');
+  if (!el) return;
+  if (!reasons.length) { el.innerHTML='<div class="nd">Нет отказов за период</div>'; return; }
+  const max = reasons[0].count;
+  el.innerHTML = reasons.slice(0,8).map((r,i) => {
+    const w = Math.round(r.count/max*100);
+    const colors = ['#f87171','#f97316','#fbbf24','#a78bfa','#60a5fa','#2dd4bf','#4ade80','#f472b6'];
+    return `<div class="fr" style="margin-bottom:5px">
+      <div class="fl" title="${r.reason}" style="width:140px">${r.reason}</div>
+      <div class="fb"><div class="fbi" style="width:${Math.max(8,w)}%;background:${colors[i%colors.length]}">
+        <span>${r.count}</span>
+      </div></div>
+      <div class="fc">${r.count}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSiteFunnel(f, tbodyId, metricsId, accentColor) {
+  if (!f) return;
+  const tbody = document.getElementById(tbodyId);
+  const mEl   = document.getElementById(metricsId);
+  if (!tbody || !mEl) return;
+
+  const stages = [
+    {name:'Заявка',          count:f.total,   fromPrev:null,    fromFirst:100},
+    {name:'Пригласили',      count:f.invited, fromPrev:f.conv1, fromFirst:f.conv1},
+    {name:'Посетил магазин', count:f.visited, fromPrev:f.conv2, fromFirst:f.total>0?Math.round(f.visited/f.total*100):0},
+    {name:'Купили',          count:f.bought,  fromPrev:f.conv3, fromFirst:f.conv4}
+  ];
+  const colors=['#a78bfa','#2dd4bf','#fbbf24','#4ade80'];
+
+  tbody.innerHTML=stages.map((s,i)=>{
+    const barW=f.total>0?Math.round(s.count/f.total*100):0;
+    const prevStr=s.fromPrev!==null?`<span style="color:${s.fromPrev>=50?'var(--green)':s.fromPrev>=25?'var(--amber)':'var(--red)'};font-weight:600">${s.fromPrev}%</span>`:'<span style="color:var(--tx3)">—</span>';
+    const firstStr=`<span style="color:${s.fromFirst>=50?'var(--green)':s.fromFirst>=25?'var(--amber)':'var(--red)'};font-weight:600">${s.fromFirst}%</span>`;
+    return`<tr>
+      <td style="font-weight:500">${s.name}</td>
+      <td style="text-align:right;font-weight:700;font-size:14px">${s.count}</td>
+      <td style="text-align:center">${prevStr}</td>
+      <td style="text-align:center">${firstStr}</td>
+      <td><div style="background:var(--bg3);border-radius:4px;height:18px;overflow:hidden"><div style="width:${barW}%;height:100%;background:${colors[i]};border-radius:4px;display:flex;align-items:center;padding-left:6px"><span style="font-size:10px;color:#fff;white-space:nowrap">${s.count}</span></div></div></td>
+    </tr>`;
+  }).join('');
+
+  mEl.innerHTML=`
+    <div class="mc" style="text-align:center">
+      <div class="mlb">Заявка → Запись</div>
+      <div class="mv" style="color:${f.conv1>=50?'var(--green)':f.conv1>=25?'var(--amber)':'var(--red)'}">${f.conv1}%</div>
+      <div class="ms">${f.total} → ${f.invited}</div>
+    </div>
+    <div class="mc" style="text-align:center">
+      <div class="mlb">Запись → Визит</div>
+      <div class="mv" style="color:${f.conv2>=50?'var(--green)':f.conv2>=25?'var(--amber)':'var(--red)'}">${f.conv2}%</div>
+      <div class="ms">${f.invited} → ${f.visited}</div>
+    </div>
+    <div class="mc" style="text-align:center">
+      <div class="mlb">Визит → Покупка</div>
+      <div class="mv" style="color:${f.conv3>=50?'var(--green)':f.conv3>=25?'var(--amber)':'var(--red)'}">${f.conv3}%</div>
+      <div class="ms">${f.visited} → ${f.bought}</div>
+    </div>
+    <div class="mc" style="text-align:center;border:1px solid ${accentColor}">
+      <div class="mlb">Итого: Заявка → Покупка</div>
+      <div class="mv" style="color:${accentColor}">${f.conv4}%</div>
+      <div class="ms">${f.total} → ${f.bought}</div>
+    </div>
+  `;
+}
+
+function renderFaamoFunnel(f){ renderSiteFunnel(f,'faamo-funnel-tbody','faamo-metrics','#2dd4bf'); }
+
+function renderAll(){ renderTab(currentTab); }
+
+function renderTab(tab){
+  if(!raw) return;
+  if(tab==='crm'){
+    renderCRM(raw,prev);
+    renderFaamoFunnel(raw.faamoFunnel||null);
+    renderSiteFunnel(raw.alfaFunnel||null,'alfa-funnel-tbody','alfa-metrics','#a78bfa');
+    renderCalls(raw.calltouch||{});
+    renderRefusalReasons(raw.refusalReasons||[]);
+  } else if(tab==='calls'){
+    renderCalls(raw.calltouch||{});
+  } else if(tab==='metrika'){
+    renderMetrika(raw.metrika||{});
+  } else if(tab==='direct'){
+    renderDirect(raw.direct||{}, raw.directKeywords||[], raw.yandex||[]);
+    renderCityChannels(raw.cityChannels||[], (raw.direct||{}).byId||{});
+  }
+}
+
+// ── CRM ──
+function renderCRM(d,p){
+  const conv=d.total>0?Math.round(d.bought/d.total*100):0;
+  const pconv=p&&p.total>0?Math.round(p.bought/p.total*100):0;
+  document.getElementById('m0').textContent=(d.total||0).toLocaleString('ru');
+  document.getElementById('m1').textContent=(d.bought||0).toLocaleString('ru');
+  document.getElementById('m2').textContent=conv+'%'; document.getElementById('m2s').textContent=d.bought+' из '+d.total;
+  document.getElementById('m3').textContent=(d.visitedPct||0)+'%'; document.getElementById('m3s').textContent=(d.visitedCount||0)+' чел.';
+  document.getElementById('m4').textContent=(d.lost||0).toLocaleString('ru'); document.getElementById('m4s').textContent=(d.total>0?Math.round(d.lost/d.total*100):0)+'%';
+  document.getElementById('m5').textContent=(d.active||0).toLocaleString('ru');
+  if(p){dif('m0d',d.total,p.total);dif('m1d',d.bought,p.bought);dif('m2d',conv,pconv);dif('m3d',d.visitedPct,p.visitedPct||0);dif('m4d',d.lost,p.lost);dif('m5d',d.active,p.active);}
+  renderFunnel(d.funnel||[]);
+  renderManagers(d.managers||[]);
+  renderGeo(d.geo||[]);
+  renderDonuts(d.sources||[]);
+  renderTrendCRM(d.trendAmo||[]);
+  renderLost(d.funnel||[]);
+}
+
+function renderFunnel(f){
+  const el=document.getElementById('funnel'); if(!f.length){el.innerHTML='<div class="nd">Нет данных</div>';return;}
+  const max=f[0].count||1;
+  el.innerHTML=f.map((s,i)=>{
+    const w=Math.max(4,Math.round(s.count/max*100));
+    const pct=Math.round(s.count/max*100);
+    const drop=i>0&&f[0].count>0?100-Math.round(s.count/f[0].count*100):null;
+    return`<div class="fr"><div class="fl" title="${s.name}">${s.name}</div><div class="fb"><div class="fbi" style="width:${w}%;background:${FC[i%FC.length]}"><span>${s.count}</span></div></div><div class="fc">${pct}%</div><div class="fd" style="color:${drop>50?'var(--red)':drop>25?'var(--amber)':'var(--tx3)'}">${drop!==null&&i>0?'-'+drop+'%':''}</div></div>`;
+  }).join('');
+}
+
+function renderManagers(managers){
+  const el=document.getElementById('mgrs'); if(!managers.length){el.innerHTML='<div class="nd">Нет данных</div>';return;}
+  el.innerHTML=managers.map((m,i)=>{
+    const conv=m.leads>0?Math.round(m.bought/m.leads*100):0;
+    const vis=m.leads>0?Math.round((m.visited||0)/m.leads*100):0;
+    const ini=(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const c=AC[i%AC.length];
+    return`<div class="mr"><div class="av" style="background:${c}22;color:${c}">${ini}</div><div class="mn">${m.name}</div><div class="mss"><div class="mst"><div class="msv">${m.leads}</div><div class="msl">Лидов</div></div><div class="mst"><div class="msv" style="color:var(--green)">${m.bought}</div><div class="msl">Купили</div></div><div class="mst"><div class="msv" style="color:${cc(conv)}">${conv}%</div><div class="msl">Конв.</div></div><div class="mst"><div class="msv" style="color:var(--teal)">${vis}%</div><div class="msl">В магазин</div></div></div></div>`;
+  }).join('');
+}
+
+function renderGeo(geo){
+  const el=document.getElementById('geo'); if(!geo.length){el.innerHTML='<div class="nd">Нет данных</div>';return;}
+  const SC=['#a78bfa','#2dd4bf','#fbbf24','#60a5fa','#4ade80','#f87171'];
+  el.innerHTML=geo.map((city,ci)=>{
+    const conv=city.leads>0?Math.round(city.bought/city.leads*100):0;
+    const sites=city.sites.map((site,si)=>{
+      const sc=site.leads>0?Math.round(site.bought/site.leads*100):0;
+      const mx=site.sources[0]?.leads||1;
+      const srcs=site.sources.map((src,ri)=>`<div class="src-row"><div style="width:6px;height:6px;border-radius:50%;background:${SC[ri%SC.length]};flex-shrink:0"></div><div style="flex:1;font-size:12px;color:var(--tx2)">${src.source}</div><div style="width:55px;background:var(--bg3);border-radius:3px;height:3px;flex-shrink:0"><div style="width:${Math.round(src.leads/mx*100)}%;height:3px;border-radius:3px;background:${SC[ri%SC.length]}"></div></div><div style="font-size:12px;font-weight:500;width:30px;text-align:right">${src.leads}</div><div style="font-size:12px;color:var(--green);width:28px;text-align:right">${src.bought}</div><div style="font-size:11px;width:30px;text-align:right;color:${cc(src.leads>0?Math.round(src.bought/src.leads*100):0)}">${src.leads>0?Math.round(src.bought/src.leads*100):0}%</div></div>`).join('');
+      return`<div class="site-block"><div class="site-hdr" onclick="toggleEl(this)"><div style="width:8px;height:8px;border-radius:2px;background:${SC[si%SC.length]};flex-shrink:0"></div><div class="site-name">${site.site}</div><div style="display:flex;gap:10px;font-size:12px"><span>${site.leads}</span><span style="color:var(--green)">${site.bought}</span><span style="color:${cc(sc)};font-weight:500">${sc}%</span></div><span style="font-size:11px;color:var(--tx3);transition:transform .2s">›</span></div><div class="site-body"><div style="display:flex;padding:4px 6px;font-size:10px;color:var(--tx3);gap:8px"><div style="flex:1">Источник</div><div style="width:55px"></div><div style="width:30px;text-align:right">Лидов</div><div style="width:28px;text-align:right">Куп.</div><div style="width:30px;text-align:right">Конв.</div></div>${srcs}</div></div>`;
+    }).join('');
+    return`<div class="city-block"><div class="city-hdr" onclick="toggleCity(this)"><div style="font-size:16px">${city.city==='Москва'?'🏙️':city.city==='Санкт-Петербург'?'🌊':'📍'}</div><div class="city-name">${city.city}</div><div class="city-stats"><div class="cst"><div class="cst-v">${city.leads}</div><div class="cst-l">Лидов</div></div><div class="cst"><div class="cst-v" style="color:var(--green)">${city.bought}</div><div class="cst-l">Купили</div></div><div class="cst"><div class="cst-v" style="color:${cc(conv)}">${conv}%</div><div class="cst-l">Конв.</div></div></div><span class="chv">›</span></div><div class="city-body">${sites}</div></div>`;
+  }).join('');
+}
+
+function toggleCity(h){const b=h.nextElementSibling,c=h.querySelector('.chv'),o=b.classList.toggle('open');if(c)c.classList.toggle('open',o);}
+function toggleEl(h){const b=h.nextElementSibling,c=h.querySelector('span:last-child'),o=b.classList.toggle('open');if(c)c.style.transform=o?'rotate(90deg)':'';}
+
+function renderDonuts(sources){
+  const rows=sources.slice(0,8);
+  const other=sources.slice(8).reduce((a,s)=>({leads:a.leads+s.leads,bought:a.bought+s.bought}),{leads:0,bought:0});
+  const all=other.leads>0?[...rows,{name:'другие',...other}]:rows;
+  if(!all.length)return;
+  const labels=all.map(r=>r.name);
+  const lD=all.map(r=>r.leads),bD=all.map(r=>r.bought);
+  const tL=lD.reduce((a,b)=>a+b,0),tB=bD.reduce((a,b)=>a+b,0);
+  function mk(id,data,total,legId){
+    const ctx=document.getElementById(id);if(!ctx)return;
+    const ex=Chart.getChart(ctx);if(ex)ex.destroy();
+    new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:AC,borderWidth:2,borderColor:document.documentElement.getAttribute('data-theme')==='dark'?'#16161b':'#ffffff'}]},options:{responsive:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} (${total>0?Math.round(c.parsed/total*100):0}%)`}}}}});
+    const leg=document.getElementById(legId);if(!leg)return;
+    leg.innerHTML=all.map((r,i)=>`<div class="dl-row"><div class="dl-dot" style="background:${AC[i%AC.length]}"></div><div class="dl-name" title="${r.name}">${r.name}</div><div class="dl-pct">${total>0?Math.round(data[i]/total*100):0}%</div><div class="dl-cnt">${data[i]}</div></div>`).join('');
+  }
+  mk('dleads',lD,tL,'dleads-leg');mk('dbought',bD,tB,'dbought-leg');
+}
+
+function renderTrendCRM(trend){
+  if(tChart){tChart.destroy();tChart=null;}
+  if(!trend.length)return;
+  tChart=new Chart(document.getElementById('tchart'),{type:'line',data:{labels:trend.map(t=>t.date),datasets:[{label:'Лидов',data:trend.map(t=>t.leads),borderColor:'#a78bfa',backgroundColor:'#a78bfa12',borderWidth:2,pointRadius:3,tension:.4,fill:true},{label:'Купили',data:trend.map(t=>t.bought),borderColor:'#4ade80',backgroundColor:'#4ade8010',borderWidth:2,pointRadius:3,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:axisColor(),font:{size:10}},grid:{color:gridColor()}},y:{ticks:{color:axisColor(),font:{size:10}},grid:{color:gridColor()}}}}});
+}
+
+function renderLost(f){
+  const el=document.getElementById('lost');if(!f.length){el.innerHTML='<div class="nd">Нет данных</div>';return;}
+  const rows=[];for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>0)rows.push({from:f[i-1].name,to:f[i].name,lost:l,pct:Math.round(l/f[i-1].count*100)});}
+  rows.sort((a,b)=>b.lost-a.lost);
+  if(!rows.length){el.innerHTML='<div class="nd" style="color:var(--green)">Потерь нет</div>';return;}
+  el.innerHTML=rows.slice(0,6).map(r=>`<div class="lr"><div style="font-size:12px;color:var(--tx2)">${r.from} → ${r.to}</div><div style="display:flex;gap:8px"><span style="color:var(--red);font-size:13px;font-weight:500">-${r.lost}</span><span style="color:var(--tx3);font-size:11px">${r.pct}%</span></div></div>`).join('');
+}
+
+// ── CALLTOUCH ──
+function renderCalls(ct){
+  ['alfa-collection.ru','faamo.ru'].forEach(site=>{
+    const key=site==='alfa-collection.ru'?'alfa':'faamo';
+    const d=ct[site]||{total:0,answered:0,missed:0,unique:0,target:0,avgDuration:0,bySrc:[],byCity:[]};
+    const ar=d.total>0?Math.round(d.answered/d.total*100):0;
+    const mEl=document.getElementById('ct-m-'+key);
+    if(mEl)mEl.innerHTML=`
+      <div class="mc"><div class="mlb">Всего звонков</div><div class="mv">${d.total}</div></div>
+      <div class="mc"><div class="mlb">Принято</div><div class="mv" style="color:var(--green)">${d.answered}</div></div>
+      <div class="mc"><div class="mlb">Пропущено</div><div class="mv" style="color:var(--red)">${d.missed}</div></div>
+      <div class="mc"><div class="mlb">Целевых</div><div class="mv" style="color:var(--purple)">${d.target}</div></div>
+      <div class="mc"><div class="mlb">Уникальных</div><div class="mv" style="color:var(--blue)">${d.unique}</div></div>
+      <div class="mc"><div class="mlb">% принятых</div><div class="mv" style="color:${ar>=80?'var(--green)':ar>=60?'var(--amber)':'var(--red)'}">${ar}%</div></div>
+      <div class="mc"><div class="mlb">Ср. длит.</div><div class="mv">${fmtSec(d.avgDuration)}</div></div>
+    `;
+    const sEl=document.getElementById('ct-src-'+key);
+    if(sEl){
+      if(!d.bySrc.length)sEl.innerHTML='<tr><td colspan="6" style="color:var(--tx3);padding:8px">Нет данных</td></tr>';
+      else sEl.innerHTML=d.bySrc.map(r=>{const p=r.calls>0?Math.round(r.answered/r.calls*100):0;return`<tr><td style="font-weight:500">${r.src}</td><td style="text-align:right">${r.calls}</td><td style="text-align:right;color:var(--green)">${r.answered}</td><td style="text-align:right;color:var(--red)">${r.missed}</td><td style="text-align:right;color:var(--purple)">${r.target}</td><td style="text-align:right;color:${p>=80?'var(--green)':p>=60?'var(--amber)':'var(--red)'};">${p}%</td></tr>`;}).join('');
+    }
+    const cEl=document.getElementById('ct-city-'+key);
+    if(cEl){
+      if(!d.byCity.length)cEl.innerHTML='<tr><td colspan="4" style="color:var(--tx3);padding:8px">Нет данных</td></tr>';
+      else cEl.innerHTML=d.byCity.map(r=>{const p=r.calls>0?Math.round(r.answered/r.calls*100):0;return`<tr><td style="text-transform:capitalize">${r.city}</td><td style="text-align:right">${r.calls}</td><td style="text-align:right;color:var(--green)">${r.answered}</td><td style="text-align:right;color:${p>=80?'var(--green)':p>=60?'var(--amber)':'var(--red)'}">${p}%</td></tr>`;}).join('');
+    }
+  });
+}
+
+// ── METRIKA ──
+function renderMetrika(m){
+  ['alfa-collection.ru','faamo.ru'].forEach(site=>{
+    const key=site==='alfa-collection.ru'?'alfa':'faamo';
+    const d=m[site]||{};
+    const mm=document.getElementById('mm-'+key);
+    if(mm)mm.innerHTML=`<div class="mc"><div class="mlb">Визиты</div><div class="mv">${(d.visits||0).toLocaleString('ru')}</div></div><div class="mc"><div class="mlb">Посетители</div><div class="mv" style="color:var(--blue)">${(d.users||0).toLocaleString('ru')}</div></div><div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--amber)">${d.bounceRate||0}%</div></div><div class="mc"><div class="mlb">Глубина</div><div class="mv">${d.pageDepth||0}</div></div><div class="mc"><div class="mlb">Ср. время</div><div class="mv">${fmtSec(d.avgDuration||0)}</div></div>`;
+    const sEl=document.getElementById('src-'+key);
+    if(sEl){const rows=d.bySource||[];sEl.innerHTML=rows.length?rows.map(r=>`<tr><td>${r.source}</td><td style="text-align:right;font-weight:500">${r.visits.toLocaleString('ru')}</td><td style="text-align:right">${r.users.toLocaleString('ru')}</td><td style="text-align:right;color:${r.bounceRate>70?'var(--red)':r.bounceRate>50?'var(--amber)':'var(--green)'}">${r.bounceRate}%</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--tx3);padding:8px">Нет данных</td></tr>';}
+    const uEl=document.getElementById('utm-'+key);
+    if(uEl){const rows=d.byUtm||[];uEl.innerHTML=rows.length?rows.map(r=>`<tr><td>${r.source}</td><td style="text-align:right;font-weight:500">${r.visits.toLocaleString('ru')}</td><td style="text-align:right">${r.users.toLocaleString('ru')}</td><td style="text-align:right;color:${r.bounceRate>70?'var(--red)':r.bounceRate>50?'var(--amber)':'var(--green)'}">${r.bounceRate}%</td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--tx3);padding:8px">Нет UTM данных</td></tr>';}
+    const ctx=document.getElementById('mchart-'+key);
+    if(ctx){const ex=Chart.getChart(ctx);if(ex)ex.destroy();const trend=d.trend||[];if(trend.length)new Chart(ctx,{type:'line',data:{labels:trend.map(t=>t.date),datasets:[{label:'Визиты',data:trend.map(t=>t.visits),borderColor:'#60a5fa',backgroundColor:'#60a5fa12',borderWidth:2,pointRadius:2,tension:.4,fill:true},{label:'Польз.',data:trend.map(t=>t.users),borderColor:'#a78bfa',backgroundColor:'#a78bfa10',borderWidth:2,pointRadius:2,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:axisColor(),font:{size:10}},grid:{color:gridColor()}},y:{ticks:{color:axisColor(),font:{size:10}},grid:{color:gridColor()}}}}});}
+  });
+}
+
+function switchSrcTab(key,tab){
+  document.getElementById('src-ch-'+key).style.display=tab==='ch'?'block':'none';
+  document.getElementById('src-utm-'+key).style.display=tab==='utm'?'block':'none';
+  document.querySelectorAll('#src-tabs-'+key+' .stab').forEach((b,i)=>b.classList.toggle('on',i===(tab==='ch'?0:1)));
+}
+
+// ── ГОРОД → КАНАЛ ──
+function renderCityChannels(cityChannels, directById) {
+  const el = document.getElementById('city-channel-wrap');
+  if (!el) return;
+  if (!cityChannels || !cityChannels.length) {
+    el.innerHTML = '<div class="nd">Нет данных</div>';
+    return;
+  }
+
+  // Строим карту кампаний по ID из Директа
+  const campMap = {};
+  if (directById) {
+    for (const [id, camp] of Object.entries(directById)) {
+      campMap[id] = camp;
+    }
+  }
+
+  const CHAN_COLORS = {
+    'Яндекс Директ': '#fc3f1d',
+    'Яндекс Карты':  '#fbbf24',
+    'Яндекс SEO':    '#f97316',
+    'Google SEO':    '#60a5fa',
+    'Google Карты':  '#3b82f6',
+    'VK':            '#a78bfa',
+    'Instagram':     '#f472b6',
+    'Telegram':      '#2dd4bf',
+    '2GIS':          '#4ade80',
+    'Прямой заход':  '#8888a0',
+    'Рекомендации':  '#34d399',
+    'Постоянный клиент': '#a3e635',
+    'С улицы':       '#fb923c',
+  };
+
+  el.innerHTML = cityChannels.map(city => {
+    const totalLeads  = city.channels.reduce((s,c)=>s+c.leads, 0);
+    const totalBought = city.channels.reduce((s,c)=>s+c.bought, 0);
+
+    const rows = city.channels.map(ch => {
+      // Пытаемся найти расходы: utm_campaign может быть ID или названием
+      const directData = campMap[ch.camp] || null;
+      const cost    = directData ? directData.cost : null;
+      const clicks  = directData ? directData.clicks : null;
+      const cpl     = cost && ch.leads  > 0 ? Math.round(cost / ch.leads)  : null;
+      const cpo     = cost && ch.bought > 0 ? Math.round(cost / ch.bought) : null;
+      const conv    = ch.leads > 0 ? Math.round(ch.bought / ch.leads * 100) : 0;
+      const color   = CHAN_COLORS[ch.src] || '#8888a0';
+
+      // Название кампании
+      const campName = directData ? directData.name : (ch.camp || '');
+      const chanLabel = ch.src + (campName ? ' · ' + campName.slice(0,30) : '');
+
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <span style="font-size:12px" title="${chanLabel}">${chanLabel.slice(0,45)}${chanLabel.length>45?'…':''}</span>
+          </div>
+        </td>
+        <td style="text-align:right;font-weight:500">${ch.leads}</td>
+        <td style="text-align:right;color:var(--green);font-weight:500">${ch.bought}</td>
+        <td style="text-align:right;color:${conv>=30?'var(--green)':conv>=15?'var(--amber)':'var(--red)'};font-weight:500">${conv}%</td>
+        <td style="text-align:right;color:var(--amber)">${cost !== null ? cost.toLocaleString('ru') + ' ₽' : '—'}</td>
+        <td style="text-align:right;color:var(--blue)">${clicks !== null ? clicks.toLocaleString('ru') : '—'}</td>
+        <td style="text-align:right;color:${cpl>3000?'var(--red)':cpl>1500?'var(--amber)':cpl?'var(--green)':'var(--tx3)'}">${cpl ? cpl.toLocaleString('ru') + ' ₽' : '—'}</td>
+        <td style="text-align:right;color:${cpo>8000?'var(--red)':cpo>4000?'var(--amber)':cpo?'var(--green)':'var(--tx3)'}">${cpo ? cpo.toLocaleString('ru') + ' ₽' : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const totConv = totalLeads > 0 ? Math.round(totalBought/totalLeads*100) : 0;
+    const totalCost = city.channels.reduce((s,ch) => {
+      const d = campMap[ch.camp];
+      return s + (d ? d.cost : 0);
+    }, 0);
+
+    return `<div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 10px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <div style="font-size:14px">${city.city==='Москва'?'🏙️':city.city==='Санкт-Петербург'?'🌊':'📍'}</div>
+        <div style="font-size:13px;font-weight:600;flex:1">${city.city}</div>
+        <div style="display:flex;gap:16px;font-size:12px">
+          <span>${totalLeads} лидов</span>
+          <span style="color:var(--green)">${totalBought} продаж</span>
+          <span style="color:${totConv>=30?'var(--green)':totConv>=15?'var(--amber)':'var(--red)'};font-weight:500">${totConv}% конв.</span>
+          ${totalCost > 0 ? `<span style="color:var(--amber)">${totalCost.toLocaleString('ru')} ₽</span>` : ''}
+        </div>
+        <span style="font-size:11px;color:var(--tx3)">›</span>
+      </div>
+      <div>
+        <table class="tbl fixed" style="font-size:12px">
+          <thead><tr>
+            <th style="width:32%">Канал / Кампания</th>
+            <th style="width:8%;text-align:right">Лидов</th>
+            <th style="width:9%;text-align:right">Продаж</th>
+            <th style="width:8%;text-align:right">Конв.</th>
+            <th style="width:12%;text-align:right">Расход ₽</th>
+            <th style="width:9%;text-align:right">Клики</th>
+            <th style="width:11%;text-align:right">CPL ₽</th>
+            <th style="width:11%;text-align:right">CPO ₽</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ДИРЕКТ ──
+function renderDirect(dir, kws, crmYd){
+  const camps=dir.campaigns||[], totals=dir.totals||{clicks:0,cost:0,impressions:0};
+  const crmTotL=crmYd.reduce((a,r)=>a+r.leads,0), crmTotB=crmYd.reduce((a,r)=>a+r.bought,0);
+  const cpl=crmTotL>0?Math.round(totals.cost/crmTotL):0;
+  const cpo=crmTotB>0?Math.round(totals.cost/crmTotB):0;
+  const sumEl=document.getElementById('dir-summary');
+  if(sumEl)sumEl.innerHTML=`
+    <div class="mc"><div class="mlb">Расход ₽</div><div class="mv" style="color:var(--amber)">${totals.cost.toLocaleString('ru')}</div></div>
+    <div class="mc"><div class="mlb">Клики</div><div class="mv">${totals.clicks.toLocaleString('ru')}</div></div>
+    <div class="mc"><div class="mlb">Показы</div><div class="mv" style="color:var(--tx2)">${totals.impressions.toLocaleString('ru')}</div></div>
+    <div class="mc"><div class="mlb">Заявки (CRM)</div><div class="mv" style="color:var(--blue)">${crmTotL}</div></div>
+    <div class="mc"><div class="mlb">CPL ₽</div><div class="mv" style="color:${cpl>3000?'var(--red)':cpl>1500?'var(--amber)':'var(--green)'}">${cpl>0?cpl.toLocaleString('ru'):'—'}</div></div>
+    <div class="mc"><div class="mlb">CPO ₽</div><div class="mv" style="color:${cpo>8000?'var(--red)':cpo>4000?'var(--amber)':'var(--green)'}">${cpo>0?cpo.toLocaleString('ru'):'—'}</div></div>
+  `;
+  const totEl=document.getElementById('dir-total');
+  if(totEl)totEl.textContent=`${totals.clicks.toLocaleString('ru')} кликов · ${totals.cost.toLocaleString('ru')} ₽`;
+
+  const crmCmap={};
+  for(const r of crmYd){if(!crmCmap[r.campaign])crmCmap[r.campaign]={leads:0,bought:0};crmCmap[r.campaign].leads+=r.leads;crmCmap[r.campaign].bought+=r.bought;}
+
+  const cEl=document.getElementById('dir-camps');
+  if(cEl){
+    if(!camps.length)cEl.innerHTML='<tr><td colspan="9" style="color:var(--tx3);padding:10px">Нет данных Директа</td></tr>';
+    else cEl.innerHTML=camps.map(r=>{const crm=crmCmap[r.name]||{leads:0,bought:0};const cpl=crm.leads>0?Math.round(r.cost/crm.leads):0;return`<tr><td title="${r.name}">${r.name}</td><td style="font-size:10px;color:var(--tx3)">${r.type}</td><td style="text-align:right;font-weight:500">${r.clicks.toLocaleString('ru')}</td><td style="text-align:right;color:var(--tx2)">${r.impressions.toLocaleString('ru')}</td><td style="text-align:right;color:var(--teal)">${r.ctr}%</td><td style="text-align:right;color:var(--amber);font-weight:500">${r.cost.toLocaleString('ru')}</td><td style="text-align:right;color:var(--tx2)">${r.avgCpc}</td><td style="text-align:right;color:var(--blue)">${crm.leads||'—'}</td><td style="text-align:right;color:${cpl>3000?'var(--red)':cpl>1500?'var(--amber)':'var(--green)'};font-weight:500">${cpl>0?cpl.toLocaleString('ru'):'—'}</td></tr>`;}).join('');
+  }
+
+  const crmKmap={};
+  for(const r of crmYd){if(!crmKmap[r.term])crmKmap[r.term]={leads:0,bought:0};crmKmap[r.term].leads+=r.leads;crmKmap[r.term].bought+=r.bought;}
+  const merged=[...kws];
+  for(const [kw,v] of Object.entries(crmKmap)) if(!merged.find(r=>r.keyword===kw)) merged.push({keyword:kw,campaign:'—',clicks:0,cost:0,ctr:0,avgCpc:0});
+
+  const kEl=document.getElementById('dir-kws');
+  if(kEl){
+    if(!merged.length)kEl.innerHTML='<tr><td colspan="9" style="color:var(--tx3);padding:10px">Нет данных</td></tr>';
+    else kEl.innerHTML=merged.slice(0,60).map(r=>{
+      const crm=crmKmap[r.keyword]||{leads:0,bought:0};
+      const conv=crm.leads>0?Math.round(crm.bought/crm.leads*100):null;
+      const badge=conv===null?'<span class="badge bgr">—</span>':conv>=40?`<span class="badge bg">${conv}%</span>`:conv>=20?`<span class="badge ba">${conv}%</span>`:`<span class="badge br2">${conv}%</span>`;
+      return`<tr><td title="${r.keyword}">${r.keyword}</td><td title="${r.campaign}" style="font-size:11px;color:var(--tx3)">${r.campaign}</td><td style="text-align:right;font-weight:500">${r.clicks>0?r.clicks.toLocaleString('ru'):'—'}</td><td style="text-align:right;color:var(--amber)">${r.cost>0?r.cost.toLocaleString('ru')+' ₽':'—'}</td><td style="text-align:right">${r.ctr>0?r.ctr+'%':'—'}</td><td style="text-align:right;color:var(--tx2)">${r.avgCpc>0?r.avgCpc:'—'}</td><td style="text-align:right;color:var(--blue);font-weight:500">${crm.leads||'—'}</td><td style="text-align:right;color:var(--green)">${crm.bought||'—'}</td><td style="text-align:right">${badge}</td></tr>`;
+    }).join('');
+  }
+}
+
+// ── НАВИГАЦИЯ ──
+document.getElementById('navtabs').addEventListener('click',e=>{
+  const t=e.target.closest('.ntab');if(!t)return;
+  document.querySelectorAll('.ntab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.getElementById('page-'+t.dataset.pg).classList.add('on');
+  currentTab=t.dataset.pg;
+  if(!loadedTabs[currentTab]){
+    loadTab(currentTab); // lazy load при первом переходе
+  } else {
+    renderTab(currentTab); // уже загружено — просто рендерим
+  }
+});
+
+function setPeriod(p){
+  period=p; cFrom=null; cTo=null;
+  raw=null; prev=null; loadedTabs={};
+  document.getElementById('df').value='';
+  document.getElementById('dt').value='';
+  document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));
+  document.querySelector(`.ptab[data-p="${p}"]`)?.classList.add('on');
+}
+
+function applyRange(){
+  const f=document.getElementById('df').value,t=document.getElementById('dt').value;
+  if(!f||!t)return;
+  cFrom=f;cTo=t;period='';
+  raw=null;prev=null;loadedTabs={};
+  document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));
+  loadTab(currentTab);
+}
+
+['ptabs1','ptabs2'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{
+    const t=e.target.closest('.ptab');if(!t)return;
+    setPeriod(t.dataset.p);
+    load();
+  });
+});
+
+function applyRange(){
+  const f=document.getElementById('df').value,t=document.getElementById('dt').value;
+  if(!f||!t)return;
+  cFrom=f;cTo=t;period='';
+  document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));
+  load();
+}
+
+document.getElementById('ct-stabs').addEventListener('click',e=>{
+  const t=e.target.closest('.stab');if(!t)return;
+  document.querySelectorAll('#ct-stabs .stab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  ['ct-alfa-collection.ru','ct-faamo.ru'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('ct-'+t.dataset.ct).style.display='block';
+});
+
+document.getElementById('m-stabs').addEventListener('click',e=>{
+  const t=e.target.closest('.stab');if(!t)return;
+  document.querySelectorAll('#m-stabs .stab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  ['ms-alfa-collection.ru','ms-faamo.ru'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('ms-'+t.dataset.ms).style.display='block';
+});
+
+// ── ТЕМА ──
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('alfa_theme', theme);
+  const btn = document.getElementById('themeBtn');
+  if(btn) btn.textContent = theme==='dark' ? '🌙' : '☀️';
+  // Перерисовываем графики с новыми цветами осей
+  if(raw) setTimeout(()=>renderTab(currentTab), 50);
+}
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  applyTheme(cur==='light' ? 'dark' : 'light');
+}
+// Применяем сохранённую тему сразу
+applyTheme(localStorage.getItem('alfa_theme') || 'light');
+
+// ── INIT ──
+const now=new Date();
+document.getElementById('dt').value=now.toISOString().slice(0,10);
+document.getElementById('df').value=new Date(now-30*86400000).toISOString().slice(0,10);
+
+API=localStorage.getItem('alfa_api_v2')||'';
+if(API&&API.startsWith('https://script.google.com')){
+  document.getElementById('setup').style.display='none';
+  document.getElementById('main').style.display='block';
+  load();
+}else{document.getElementById('aurl').value=API;}
+</script>
+</body>
+</html>
