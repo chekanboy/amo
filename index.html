@@ -221,7 +221,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <script>
 // ПАРОЛЬ — измените значение ниже на свой
-const DASHBOARD_PASSWORD = 'Barcelona2018';
+const DASHBOARD_PASSWORD = 'MisterChe2026';
 
 function checkPw(){
   const val = document.getElementById('pwInput').value;
@@ -561,38 +561,53 @@ function setLoading(v){
   document.getElementById('dash').style.display=v?'none':'block';
 }
 
-function buildUrl(){
-  if(cFrom&&cTo) return API+'?from='+cFrom+'&to='+cTo;
-  return API+'?period='+period;
+let loadedTabs = {};
+
+function buildUrl(tab){
+  let u = (cFrom&&cTo) ? API+'?from='+cFrom+'&to='+cTo : API+'?period='+period;
+  return u + '&tab=' + (tab||'crm');
 }
 
-function prevUrl(){
+function prevUrl(tab){
   const map={today:'yesterday',this_week:'last_week',this_month:'last_month'};
-  if(map[period]) return API+'?period='+map[period];
+  if(map[period]) return API+'?period='+map[period]+'&tab='+(tab||'crm');
   return null;
 }
 
+// Полная перезагрузка текущей вкладки (кнопка обновить, смена периода)
 async function load(){
+  loadedTabs = {};
+  raw = null;
+  await loadTab(currentTab);
+}
+
+// Грузит данные конкретной вкладки и мержит в raw
+async function loadTab(tab){
   setLoading(true);
   try{
-    const r=await fetch(buildUrl());
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    raw=await r.json();
-    if(raw.error)throw new Error(raw.error);
+    const r = await fetch(buildUrl(tab));
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    if(data.error) throw new Error(data.error);
 
-    // populate period label
+    if(!raw) raw = {};
+    Object.assign(raw, data);
+    loadedTabs[tab] = true;
+
     document.getElementById('plbl').textContent = cFrom&&cTo ? fmtd(cFrom)+' — '+fmtd(cTo) : (PERIOD_LABELS[period]||period);
-    document.getElementById('upd').textContent = raw.updatedAt||'';
+    document.getElementById('upd').textContent = data.updatedAt||'';
 
-    // prev period for comparison
-    prev=null;
-    const pu=prevUrl();
-    if(pu){try{const r2=await fetch(pu);prev=await r2.json();if(prev.error)prev=null;}catch(e){}}
+    // Сравнение с прошлым периодом только для CRM
+    if(tab==='crm'){
+      prev=null;
+      const pu=prevUrl('crm');
+      if(pu){try{const r2=await fetch(pu);const p2=await r2.json();if(!p2.error)prev=p2;}catch(e){}}
+    }
 
-    renderAll();
+    renderTab(tab);
   }catch(e){
     document.getElementById('lov').style.display='flex';
-    document.getElementById('lov').innerHTML=`<div style="color:var(--red);text-align:center;font-size:13px">Ошибка: ${e.message}<br><br><button class="btn" onclick="load()" style="margin:0 auto">↻ Повторить</button></div>`;
+    document.getElementById('lov').innerHTML=`<div style="color:var(--red);text-align:center;font-size:13px">Ошибка: ${e.message}<br><br><button class="btn" onclick="loadTab('${tab}')" style="margin:0 auto">↻ Повторить</button></div>`;
     document.getElementById('dash').style.display='none';
     return;
   }
