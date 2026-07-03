@@ -1,0 +1,18 @@
+/* СВЕТЛАЯ ТЕМА (по умолчанию) */
+:root, [data-theme="light"]{
+  --bg:#f4f5f7;--bg2:#ffffff;--bg3:#eef0f3;--bg4:#e2e5ea;
+  --br:#00000010;--br2:#00000018;--br3:#00000028;
+  --tx:#1a1a2e;--tx2:#5a6072;--tx3:#9499a8;
+  --green:#16a34a;--red:#dc2626;--amber:#d97706;
+  --blue:#2563eb;--purple:#7c3aed;--teal:#0d9488;--pink:#db2777;
+  --shadow:0 1px 3px #00000012;
+}
+/* ТЁМНАЯ ТЕМА */
+[data-theme="dark"]{
+  --bg:#0d0d10;--bg2:#16161b;--bg3:#1e1e26;--bg4:#26262f;
+  --br:#ffffff0e;--br2:#ffffff1a;--br3:#ffffff28;
+  --tx:#ececec;--tx2:#9098b0;--tx3:#646878;
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --blue:#60a5fa;--purple:#a78bfa;--teal:#2dd4bf;--pink:#f472b6;
+  --shadow:0 1px 3px #00000030;
+}

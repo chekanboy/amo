@@ -1,0 +1,46 @@
+/* АДАПТИВ: планшет / телефон / узкий телефон */
+@media(max-width:1100px){.mrow{grid-template-columns:repeat(3,1fr)}.mmet{grid-template-columns:repeat(3,1fr)}.g3{grid-template-columns:1fr 1fr}}
+@media(max-width:768px){
+  /* Топбар: чёткая вертикальная колонка, НЕ прилипает, НЕ wrap */
+  .bar{height:auto;padding:10px 12px;gap:8px;position:static;flex-direction:column;flex-wrap:nowrap;align-items:stretch}
+  .logo{order:0;width:auto;text-align:left}
+  .ml{order:1;width:100%;margin-left:0;justify-content:flex-end;gap:6px}
+  .plbl{margin-right:auto}
+  .plbl,.upd{font-size:11px}
+  .navtabs{order:2;width:100%;display:flex;justify-content:space-between;gap:3px}
+  .ntab{flex:1;text-align:center;padding:9px 4px;font-size:12px}
+  .ptabs-wrap{width:100%;order:3;gap:5px;flex-direction:column}
+  .ptabs{width:100%;display:flex;justify-content:space-between;gap:3px}
+  .ptab{flex:1;text-align:center;padding:8px 3px;font-size:11px}
+  .sep{display:none}
+  .di{order:4;width:100%;display:flex;justify-content:center;gap:6px}
+  .di input{flex:1;font-size:13px;padding:8px;min-width:0}
+  .aply{padding:8px 16px;font-size:13px;flex-shrink:0}
+  /* Метрики по 2 в ряд */
+  .mrow{grid-template-columns:repeat(2,1fr);gap:8px}
+  .mmet{grid-template-columns:repeat(2,1fr);gap:8px}
+  .g2,.g3{grid-template-columns:1fr}
+  .mv{font-size:23px}
+  .mc{padding:12px}
+  /* Таблицы скроллятся горизонтально */
+  .card{padding:12px;overflow-x:auto}
+  .tbl{min-width:520px}
+  .tbl.fixed{min-width:560px}
+  /* Воронка читаемее */
+  .fl{width:115px;font-size:11px}
+  .floss{width:115px}
+  /* Главная страница padding меньше */
+  .main{padding:12px 8px 20px}
+  /* Гео блоки */
+  .city-stats{gap:8px;font-size:11px}
+  .donut-wrap{flex-direction:column}
+  .donut-canvas{width:200px!important;height:200px!important}
+}
+@media(max-width:420px){
+  .mrow{grid-template-columns:1fr 1fr;gap:6px}
+  .mv{font-size:20px}
+  .mlb{font-size:9px}
+  .ntab{font-size:11px;padding:6px 2px}
+  .ptab{font-size:10px}
+  .logo{font-size:14px}
+}

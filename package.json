@@ -1,0 +1,15 @@
+{
+  "name": "amo-dashboard",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "alfa.crm — модульный дашборд AmoCRM / Calltouch / Метрика / Директ (Vite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

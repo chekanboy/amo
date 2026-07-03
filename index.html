@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alfa.crm</title>
+<!-- Chart.js через CDN (можно заменить на npm-пакет, см. README) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script type="module" src="/src/main.js"></script>
+</head>
+<body>
+<!-- ПАРОЛЬ -->
+<div id="pwgate" style="position:fixed;inset:0;z-index:9999;background:#0d0d10;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="background:#16161b;border:1px solid #ffffff14;border-radius:16px;padding:36px;max-width:360px;width:90%;text-align:center">
+    <div style="font-size:22px;font-weight:700;color:#ececec;margin-bottom:6px">alfa<span style="color:#a78bfa">.</span>crm</div>
+    <div style="font-size:13px;color:#9098b0;margin-bottom:20px">Введите пароль для доступа</div>
+    <input type="password" id="pwInput" placeholder="Пароль" style="width:100%;background:#1e1e26;border:1px solid #ffffff1a;border-radius:8px;padding:11px 14px;color:#ececec;font-size:14px;margin-bottom:12px;text-align:center" onkeydown="if(event.key==='Enter')checkPw()">
+    <button onclick="checkPw()" style="width:100%;padding:11px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:14px;font-weight:500;cursor:pointer">Войти</button>
+    <div id="pwErr" style="color:#f87171;font-size:12px;margin-top:10px;min-height:16px"></div>
+  </div>
+</div>
+
+<div style="min-height:100vh;display:grid;grid-template-rows:auto 1fr">
+
+<!-- BAR -->
+<div class="bar">
+  <div class="logo">alfa<em>.</em>crm</div>
+
+  <div class="ptabs-wrap">
+    <div class="ptabs" id="ptabs1">
+      <button class="ptab on" data-p="today">Сегодня</button>
+      <button class="ptab" data-p="this_week">Эта неделя</button>
+      <button class="ptab" data-p="this_month">Этот месяц</button>
+      <button class="ptab" data-p="90days">90 дней</button>
+    </div>
+    <div class="ptabs" id="ptabs2">
+      <button class="ptab" data-p="yesterday">Вчера</button>
+      <button class="ptab" data-p="last_week">Прошлая неделя</button>
+      <button class="ptab" data-p="last_month">Прошлый месяц</button>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="di">
+    <input type="date" id="df"><span style="color:var(--tx3)">—</span>
+    <input type="date" id="dt">
+    <button class="aply" onclick="applyRange()">OK</button>
+  </div>
+  <div class="sep"></div>
+
+  <div class="navtabs" id="navtabs">
+    <button class="ntab on" data-pg="crm">CRM</button>
+    <button class="ntab" data-pg="calls">Звонки</button>
+    <button class="ntab" data-pg="metrika">Метрика</button>
+    <button class="ntab" data-pg="direct">Директ</button>
+  </div>
+
+  <div class="ml">
+    <span class="plbl" id="plbl"></span>
+    <span class="upd" id="upd"></span>
+    <button class="btn" id="themeBtn" onclick="toggleTheme()" style="padding:5px 9px" title="Сменить тему">☀️</button>
+    <button class="btn" id="rbtn" onclick="load()">
+      <span class="spin" id="rspin" style="display:none"></span>
+      <span id="rlbl">↻</span>
+    </button>
+    <button class="btn" onclick="resetSetup()" style="padding:5px 8px">⚙</button>
+  </div>
+</div>
+
+<!-- SETUP -->
+<div id="setup" class="setup">
+  <div class="sc">
+    <h2>Подключение</h2>
+    <p>Вставьте ссылку на Google Apps Script веб-приложение.</p>
+    <input class="si" id="aurl" placeholder="https://script.google.com/macros/s/XXXX/exec">
+    <button class="sb" onclick="connect()">Подключить</button>
+    <div class="serr" id="serr"></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main" class="main">
+  <div class="lov" id="lov"><div class="lsp"></div><span id="ltxt">Загружаем данные...</span></div>
+  <div id="dash" style="display:none">
+
+    <!-- CRM -->
+    <div class="page on" id="page-crm">
+      <div class="mrow">
+        <div class="mc"><div class="mlb">Лидов</div><div class="mv" id="m0">—</div><div class="ms">за период</div><div class="mdf" id="m0d"></div></div>
+        <div class="mc"><div class="mlb">Купили</div><div class="mv" style="color:var(--green)" id="m1">—</div><div class="ms">покупок</div><div class="mdf" id="m1d"></div></div>
+        <div class="mc"><div class="mlb">Конверсия</div><div class="mv" id="m2">—</div><div class="ms" id="m2s"></div><div class="mdf" id="m2d"></div></div>
+        <div class="mc"><div class="mlb">В магазин</div><div class="mv" style="color:var(--teal)" id="m3">—</div><div class="ms" id="m3s"></div><div class="mdf" id="m3d"></div></div>
+        <div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--red)" id="m4">—</div><div class="ms" id="m4s"></div><div class="mdf" id="m4d"></div></div>
+        <div class="mc"><div class="mlb">В работе</div><div class="mv" style="color:var(--blue)" id="m5">—</div><div class="ms">активных</div><div class="mdf" id="m5d"></div></div>
+      </div>
+      <div class="g2">
+        <div class="card"><div class="ct">Воронка (накопительно)</div><div id="funnel"></div></div>
+        <div class="card"><div class="ct">Менеджеры</div><div id="mgrs"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Город → Сайт → Источник</div>
+          <div class="stabs" style="margin-bottom:0">
+            <button class="stab" id="geo-tab-table" onclick="switchGeoView('table')">Таблица</button>
+            <button class="stab on" id="geo-tab-tree" onclick="switchGeoView('tree')">Дерево</button>
+          </div>
+          <input id="geo-search" oninput="renderGeoFlat()" placeholder="Поиск: город, сайт, источник…" style="margin-left:auto;background:var(--bg3);border:1px solid var(--br2);border-radius:7px;padding:5px 10px;color:var(--tx);font-size:12px;width:220px;display:none">
+        </div>
+        <div id="geo"></div>
+        <div id="geo-flat" style="display:none"></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct">Структура по источникам</div>
+        <div class="donut-wrap">
+          <div class="donut-block"><div class="donut-ttl">Заявки</div><canvas class="donut-canvas" id="dleads"></canvas><div id="dleads-leg"></div></div>
+          <div class="donut-block"><div class="donut-ttl">Продажи</div><canvas class="donut-canvas" id="dbought"></canvas><div id="dbought-leg"></div></div>
+        </div>
+        <div class="ct" style="margin-top:18px">Эффективность источников</div>
+        <table class="tbl fixed">
+          <thead><tr>
+            <th style="width:26%">Источник</th>
+            <th style="width:13%;text-align:right">Заявки</th>
+            <th style="width:13%;text-align:right">Продажи</th>
+            <th style="width:13%;text-align:right">Отказы</th>
+            <th style="width:13%;text-align:right">Конверсия</th>
+            <th style="width:22%">Качество</th>
+          </tr></thead>
+          <tbody id="src-quality"></tbody>
+        </table>
+        <div style="font-size:10px;color:var(--tx3);margin-top:8px">💡 Цифры кликабельны — открывают сделки в AmoCRM</div>
+      </div>
+      <!-- ВОРОНКИ ПО САЙТАМ -->
+      <div class="g2" style="margin-bottom:12px">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <div class="ct" style="margin-bottom:0">Воронка faamo.ru</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#2dd4bf18;color:#2dd4bf;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+          </div>
+          <table class="tbl fixed" style="margin-bottom:10px">
+            <thead><tr>
+              <th style="width:30%">Этап</th>
+              <th style="width:12%;text-align:right">Кол-во</th>
+              <th style="width:20%;text-align:center">Из пред.</th>
+              <th style="width:20%;text-align:center">Из заявки</th>
+              <th style="width:18%">Бар</th>
+            </tr></thead>
+            <tbody id="faamo-funnel-tbody"></tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="faamo-metrics"></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <div class="ct" style="margin-bottom:0">Воронка alfa-collection.ru</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#a78bfa18;color:#a78bfa;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+          </div>
+          <table class="tbl fixed" style="margin-bottom:10px">
+            <thead><tr>
+              <th style="width:30%">Этап</th>
+              <th style="width:12%;text-align:right">Кол-во</th>
+              <th style="width:20%;text-align:center">Из пред.</th>
+              <th style="width:20%;text-align:center">Из заявки</th>
+              <th style="width:18%">Бар</th>
+            </tr></thead>
+            <tbody id="alfa-funnel-tbody"></tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="alfa-metrics"></div>
+        </div>
+      </div>
+
+      <div class="g2">
+        <div class="card"><div class="ct">Динамика лидов</div><div class="chart-wrap" style="height:160px"><canvas id="tchart"></canvas></div></div>
+        <div class="card">
+          <div class="ct">Где теряются лиды</div>
+          <div id="lost"></div>
+          <div class="ct" style="margin-top:16px">Причины отказов</div>
+          <div id="refusal-reasons"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ЗВОНКИ -->
+    <div class="page" id="page-calls">
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <div class="ct" style="margin-bottom:0">CALLTOUCH</div>
+        <div class="stabs" id="ct-stabs" style="margin-bottom:0">
+          <button class="stab on" data-ct="alfa-collection.ru">alfa-collection.ru</button>
+          <button class="stab" data-ct="faamo.ru">faamo.ru</button>
+        </div>
+      </div>
+      <div id="ct-alfa-collection.ru">
+        <div class="mmet" id="ct-m-alfa"></div>
+        <div class="g2">
+          <div class="card">
+            <div class="ct">По источникам рекламы</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:28%">Источник</th>
+              <th style="width:14%;text-align:right">Всего</th>
+              <th style="width:14%;text-align:right">Принято</th>
+              <th style="width:14%;text-align:right">Пропущено</th>
+              <th style="width:15%;text-align:right">Целевых</th>
+              <th style="width:15%;text-align:right">% принятых</th>
+            </tr></thead><tbody id="ct-src-alfa"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="ct">По городам</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:40%">Город</th>
+              <th style="width:20%;text-align:right">Звонков</th>
+              <th style="width:20%;text-align:right">Принято</th>
+              <th style="width:20%;text-align:right">%</th>
+            </tr></thead><tbody id="ct-city-alfa"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div id="ct-faamo.ru" style="display:none">
+        <div class="mmet" id="ct-m-faamo"></div>
+        <div class="g2">
+          <div class="card">
+            <div class="ct">По источникам рекламы</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:28%">Источник</th>
+              <th style="width:14%;text-align:right">Всего</th>
+              <th style="width:14%;text-align:right">Принято</th>
+              <th style="width:14%;text-align:right">Пропущено</th>
+              <th style="width:15%;text-align:right">Целевых</th>
+              <th style="width:15%;text-align:right">% принятых</th>
+            </tr></thead><tbody id="ct-src-faamo"></tbody></table>
+          </div>
+          <div class="card">
+            <div class="ct">По городам</div>
+            <table class="tbl fixed"><thead><tr>
+              <th style="width:40%">Город</th>
+              <th style="width:20%;text-align:right">Звонков</th>
+              <th style="width:20%;text-align:right">Принято</th>
+              <th style="width:20%;text-align:right">%</th>
+            </tr></thead><tbody id="ct-city-faamo"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- МЕТРИКА -->
+    <div class="page" id="page-metrika">
+      <div class="stabs" id="m-stabs">
+        <button class="stab on" data-ms="alfa-collection.ru">alfa-collection.ru</button>
+        <button class="stab" data-ms="faamo.ru">faamo.ru</button>
+      </div>
+      <div id="ms-alfa-collection.ru">
+        <div class="mmet" id="mm-alfa"></div>
+        <div class="g2">
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div class="ct" style="margin-bottom:0">Источники</div>
+              <div class="stabs" id="src-tabs-alfa" style="margin-bottom:0">
+                <button class="stab on" onclick="switchSrcTab('alfa','ch')">Каналы</button>
+                <button class="stab" onclick="switchSrcTab('alfa','utm')">UTM</button>
+              </div>
+            </div>
+            <div id="src-ch-alfa">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">Канал</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="src-alfa"></tbody></table>
+            </div>
+            <div id="src-utm-alfa" style="display:none">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">utm_source</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="utm-alfa"></tbody></table>
+            </div>
+          </div>
+          <div class="card"><div class="ct">Визиты по дням</div><div class="chart-wrap" style="height:200px"><canvas id="mchart-alfa"></canvas></div></div>
+        </div>
+      </div>
+      <div id="ms-faamo.ru" style="display:none">
+        <div class="mmet" id="mm-faamo"></div>
+        <div class="g2">
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div class="ct" style="margin-bottom:0">Источники</div>
+              <div class="stabs" id="src-tabs-faamo" style="margin-bottom:0">
+                <button class="stab on" onclick="switchSrcTab('faamo','ch')">Каналы</button>
+                <button class="stab" onclick="switchSrcTab('faamo','utm')">UTM</button>
+              </div>
+            </div>
+            <div id="src-ch-faamo">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">Канал</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="src-faamo"></tbody></table>
+            </div>
+            <div id="src-utm-faamo" style="display:none">
+              <table class="tbl fixed"><thead><tr><th style="width:38%">utm_source</th><th style="width:18%;text-align:right">Визиты</th><th style="width:18%;text-align:right">Польз.</th><th style="width:26%;text-align:right">Отказы</th></tr></thead><tbody id="utm-faamo"></tbody></table>
+            </div>
+          </div>
+          <div class="card"><div class="ct">Визиты по дням</div><div class="chart-wrap" style="height:200px"><canvas id="mchart-faamo"></canvas></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ДИРЕКТ -->
+    <div class="page" id="page-direct">
+      <div class="mmet" id="dir-summary"></div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Кампании</div>
+          <span class="ya-tag">Яндекс Директ</span>
+          <span id="dir-total" style="font-size:12px;color:var(--tx2)"></span>
+        </div>
+        <table class="tbl fixed"><thead><tr>
+          <th style="width:28%">Кампания</th><th style="width:11%">Тип</th>
+          <th style="width:10%;text-align:right">Клики</th><th style="width:11%;text-align:right">Показы</th>
+          <th style="width:8%;text-align:right">CTR</th><th style="width:11%;text-align:right">Расход ₽</th>
+          <th style="width:9%;text-align:right">Ср.клик</th><th style="width:6%;text-align:right">Заявки</th>
+          <th style="width:6%;text-align:right">CPL</th>
+        </tr></thead><tbody id="dir-camps"></tbody></table>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Ключевые слова</div>
+          <span class="ya-tag">Директ + CRM</span>
+        </div>
+        <table class="tbl fixed"><thead><tr>
+          <th style="width:26%">Ключевое слово</th><th style="width:18%">Кампания</th>
+          <th style="width:9%;text-align:right">Клики</th><th style="width:10%;text-align:right">Расход ₽</th>
+          <th style="width:7%;text-align:right">CTR</th><th style="width:8%;text-align:right">Ср.клик</th>
+          <th style="width:8%;text-align:right">Заявки</th><th style="width:7%;text-align:right">Куплено</th>
+          <th style="width:7%;text-align:right">Конв.</th>
+        </tr></thead><tbody id="dir-kws"></tbody></table>
+      </div>
+
+      <!-- ГОРОД → КАНАЛ → ЛИДЫ → ПРОДАЖИ → РАСХОД -->
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div class="ct" style="margin-bottom:0">Город → Канал → Результат</div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#4ade8018;color:#4ade80;font-weight:500">CRM + расходы Директа</span>
+        </div>
+        <div id="city-channel-wrap"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</body>
+</html>
