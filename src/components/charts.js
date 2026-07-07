@@ -31,7 +31,10 @@ export function renderSrcQuality(sources){
   if(!el) return;
   if(!sources.length){el.innerHTML='<tr><td colspan="6" style="color:var(--tx3);padding:8px">Нет данных</td></tr>';return;}
   const maxLeads=Math.max(...sources.map(s=>s.leads));
-  el.innerHTML=sources.slice(0,12).map(s=>{
+  // Таблица показывает ВСЕ источники (в отличие от пончика с топ-N + «другие»),
+  // по убыванию заявок. Копия массива — чтобы не влиять на срез пончика.
+  const rows=[...sources].sort((a,b)=>b.leads-a.leads);
+  el.innerHTML=rows.map(s=>{
     const conv=s.conv!==undefined?s.conv:(s.leads>0?Math.round(s.bought/s.leads*100):0);
     const lost=s.lost||0;
     // Оценка качества: много заявок но мало конверсии = плохо
