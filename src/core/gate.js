@@ -1,5 +1,5 @@
 // Пароль-гейт. Пароль хранится здесь — измените значение ниже на свой.
-const DASHBOARD_PASSWORD = 'MisterChe2026';
+const DASHBOARD_PASSWORD = 'Barcelona2018';
 
 export function checkPw(){
   const val = document.getElementById('pwInput').value;

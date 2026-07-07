@@ -82,6 +82,10 @@
 .stabs{display:flex;gap:5px;margin-bottom:12px}
 .stab{padding:5px 12px;border-radius:7px;border:1px solid var(--br2);background:transparent;color:var(--tx2);font-size:12px;cursor:pointer;transition:all .15s}
 .stab.on{background:#a78bfa22;border-color:var(--purple);color:var(--purple);font-weight:500}
+/* CRM под-навигация (второй уровень под основными вкладками): тот же стиль .stabs,
+   но крупнее таб и отделена нижней линией, чтобы читалась как навигация по разделу */
+.crm-stabs{gap:6px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--br);flex-wrap:wrap}
+.crm-stabs .stab{padding:6px 14px}
 /* CHART */
 .chart-wrap{position:relative;width:100%}
 .lr{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--br)}

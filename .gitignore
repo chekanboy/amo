@@ -3,3 +3,8 @@ dist
 .DS_Store
 *.local
 .vite
+
+# Бэкенд Apps Script с реальными API-токенами — НИКОГДА не коммитить
+amocrm_final_v2.gs
+amocrm_final_v2.gs.txt
+*.gs

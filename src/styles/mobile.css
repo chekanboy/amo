@@ -35,6 +35,9 @@
   .city-stats{gap:8px;font-size:11px}
   .donut-wrap{flex-direction:column}
   .donut-canvas{width:200px!important;height:200px!important}
+  /* CRM под-навигация: переносится в 2 ряда, табы крупнее для тапа, не наезжают */
+  .crm-stabs{gap:6px;margin-bottom:12px;padding-bottom:10px}
+  .crm-stabs .stab{flex:1 1 28%;text-align:center;padding:9px 8px;font-size:12px}
 }
 @media(max-width:420px){
   .mrow{grid-template-columns:1fr 1fr;gap:6px}

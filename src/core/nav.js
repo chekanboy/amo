@@ -71,4 +71,15 @@ export function initNav(){
     ['ms-alfa-collection.ru','ms-faamo.ru'].forEach(id=>document.getElementById(id).style.display='none');
     document.getElementById('ms-'+t.dataset.ms).style.display='block';
   });
+
+  // ── ПОД-ТАБЫ CRM (Обзор/Воронка/Источники/Города/Менеджеры) ──
+  // Только показ/скрытие секций: данные CRM уже загружены (один fetch ?tab=crm),
+  // ничего не перезагружаем. Графики (пончики responsive:false, тренд responsive:true
+  // с ResizeObserver) переживают показ/скрытие — перерисовка не нужна.
+  const CRM_SECS=['overview','funnel','sources','cities','managers'];
+  document.getElementById('crm-stabs').addEventListener('click',e=>{
+    const t=e.target.closest('.stab');if(!t)return;
+    document.querySelectorAll('#crm-stabs .stab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+    CRM_SECS.forEach(s=>{const el=document.getElementById('crm-sec-'+s);if(el)el.style.display=(s===t.dataset.cs)?'':'none';});
+  });
 }

@@ -12,6 +12,7 @@ import { connect, resetSetup, applyRange, initNav } from './core/nav.js';
 import { showLeadsPopup } from './components/drilldown.js';
 import { switchGeoView, renderGeoFlat, setGeoSort, toggleCity, toggleEl } from './components/geo.js';
 import { switchSrcTab } from './tabs/metrika.js';
+import { switchRoiSeg } from './tabs/direct.js';
 
 // Разметка использует inline-обработчики (onclick/oninput/onkeydown) — эти функции
 // должны быть доступны в глобальной области. При сборке в модуль они по умолчанию
@@ -31,6 +32,7 @@ Object.assign(window, {
   toggleCity,
   toggleEl,
   switchSrcTab,
+  switchRoiSeg,
 });
 
 // ── INIT ──

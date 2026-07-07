@@ -27,10 +27,16 @@ export function renderRefusalReasons(reasons) {
 
 // Воронка по конкретному сайту (таблица этапов + метрики конверсии)
 export function renderSiteFunnel(f, tbodyId, metricsId, accentColor) {
-  if (!f) return;
   const tbody = document.getElementById(tbodyId);
   const mEl   = document.getElementById(metricsId);
   if (!tbody || !mEl) return;
+
+  // Нет сделок по сайту за период (или бэкенд не прислал воронку) → сообщение вместо нулей
+  if (!f || !f.total) {
+    tbody.innerHTML = '<tr><td colspan="5" class="nd" style="text-align:center;padding:16px 0">Нет данных за период</td></tr>';
+    mEl.innerHTML = '';
+    return;
+  }
 
   const stages = [
     {name:'Заявка',          count:f.total,   fromPrev:null,    fromFirst:100},

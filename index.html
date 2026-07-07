@@ -85,97 +85,124 @@
 
     <!-- CRM -->
     <div class="page on" id="page-crm">
-      <div class="mrow">
-        <div class="mc"><div class="mlb">Лидов</div><div class="mv" id="m0">—</div><div class="ms">за период</div><div class="mdf" id="m0d"></div></div>
-        <div class="mc"><div class="mlb">Купили</div><div class="mv" style="color:var(--green)" id="m1">—</div><div class="ms">покупок</div><div class="mdf" id="m1d"></div></div>
-        <div class="mc"><div class="mlb">Конверсия</div><div class="mv" id="m2">—</div><div class="ms" id="m2s"></div><div class="mdf" id="m2d"></div></div>
-        <div class="mc"><div class="mlb">В магазин</div><div class="mv" style="color:var(--teal)" id="m3">—</div><div class="ms" id="m3s"></div><div class="mdf" id="m3d"></div></div>
-        <div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--red)" id="m4">—</div><div class="ms" id="m4s"></div><div class="mdf" id="m4d"></div></div>
-        <div class="mc"><div class="mlb">В работе</div><div class="mv" style="color:var(--blue)" id="m5">—</div><div class="ms">активных</div><div class="mdf" id="m5d"></div></div>
+
+      <!-- ПОД-НАВИГАЦИЯ CRM (второй уровень) — переключает секции ниже, данные не грузятся заново -->
+      <div class="stabs crm-stabs" id="crm-stabs">
+        <button class="stab on" data-cs="overview">Обзор</button>
+        <button class="stab" data-cs="funnel">Воронка</button>
+        <button class="stab" data-cs="sources">Источники</button>
+        <button class="stab" data-cs="cities">Города</button>
+        <button class="stab" data-cs="managers">Менеджеры</button>
       </div>
-      <div class="g2">
-        <div class="card"><div class="ct">Воронка (накопительно)</div><div id="funnel"></div></div>
-        <div class="card"><div class="ct">Менеджеры</div><div id="mgrs"></div></div>
-      </div>
-      <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <div class="ct" style="margin-bottom:0">Город → Сайт → Источник</div>
-          <div class="stabs" style="margin-bottom:0">
-            <button class="stab" id="geo-tab-table" onclick="switchGeoView('table')">Таблица</button>
-            <button class="stab on" id="geo-tab-tree" onclick="switchGeoView('tree')">Дерево</button>
-          </div>
-          <input id="geo-search" oninput="renderGeoFlat()" placeholder="Поиск: город, сайт, источник…" style="margin-left:auto;background:var(--bg3);border:1px solid var(--br2);border-radius:7px;padding:5px 10px;color:var(--tx);font-size:12px;width:220px;display:none">
+
+      <!-- ── ОБЗОР: 6 метрик со сравнением периодов + динамика лидов ── -->
+      <div class="crm-sec" id="crm-sec-overview">
+        <div class="mrow">
+          <div class="mc"><div class="mlb">Лидов</div><div class="mv" id="m0">—</div><div class="ms">за период</div><div class="mdf" id="m0d"></div></div>
+          <div class="mc"><div class="mlb">Купили</div><div class="mv" style="color:var(--green)" id="m1">—</div><div class="ms">покупок</div><div class="mdf" id="m1d"></div></div>
+          <div class="mc"><div class="mlb">Конверсия</div><div class="mv" id="m2">—</div><div class="ms" id="m2s"></div><div class="mdf" id="m2d"></div></div>
+          <div class="mc"><div class="mlb">В магазин</div><div class="mv" style="color:var(--teal)" id="m3">—</div><div class="ms" id="m3s"></div><div class="mdf" id="m3d"></div></div>
+          <div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--red)" id="m4">—</div><div class="ms" id="m4s"></div><div class="mdf" id="m4d"></div></div>
+          <div class="mc"><div class="mlb">В работе</div><div class="mv" style="color:var(--blue)" id="m5">—</div><div class="ms">активных</div><div class="mdf" id="m5d"></div></div>
         </div>
-        <div id="geo"></div>
-        <div id="geo-flat" style="display:none"></div>
+        <div class="card"><div class="ct">Динамика лидов</div><div class="chart-wrap" style="height:180px"><canvas id="tchart"></canvas></div></div>
       </div>
-      <div class="card" style="margin-bottom:12px">
-        <div class="ct">Структура по источникам</div>
-        <div class="donut-wrap">
-          <div class="donut-block"><div class="donut-ttl">Заявки</div><canvas class="donut-canvas" id="dleads"></canvas><div id="dleads-leg"></div></div>
-          <div class="donut-block"><div class="donut-ttl">Продажи</div><canvas class="donut-canvas" id="dbought"></canvas><div id="dbought-leg"></div></div>
-        </div>
-        <div class="ct" style="margin-top:18px">Эффективность источников</div>
-        <table class="tbl fixed">
-          <thead><tr>
-            <th style="width:26%">Источник</th>
-            <th style="width:13%;text-align:right">Заявки</th>
-            <th style="width:13%;text-align:right">Продажи</th>
-            <th style="width:13%;text-align:right">Отказы</th>
-            <th style="width:13%;text-align:right">Конверсия</th>
-            <th style="width:22%">Качество</th>
-          </tr></thead>
-          <tbody id="src-quality"></tbody>
-        </table>
-        <div style="font-size:10px;color:var(--tx3);margin-top:8px">💡 Цифры кликабельны — открывают сделки в AmoCRM</div>
-      </div>
-      <!-- ВОРОНКИ ПО САЙТАМ -->
-      <div class="g2" style="margin-bottom:12px">
-        <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-            <div class="ct" style="margin-bottom:0">Воронка faamo.ru</div>
-            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#2dd4bf18;color:#2dd4bf;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+
+      <!-- ── ВОРОНКА: накопительная воронка + потери + причины отказов + воронки по сайтам ── -->
+      <div class="crm-sec" id="crm-sec-funnel" style="display:none">
+        <div class="g2">
+          <div class="card"><div class="ct">Воронка (накопительно)</div><div id="funnel"></div></div>
+          <div class="card">
+            <div class="ct">Где теряются лиды</div>
+            <div id="lost"></div>
+            <div class="ct" style="margin-top:16px">Причины отказов</div>
+            <div id="refusal-reasons"></div>
           </div>
-          <table class="tbl fixed" style="margin-bottom:10px">
-            <thead><tr>
-              <th style="width:30%">Этап</th>
-              <th style="width:12%;text-align:right">Кол-во</th>
-              <th style="width:20%;text-align:center">Из пред.</th>
-              <th style="width:20%;text-align:center">Из заявки</th>
-              <th style="width:18%">Бар</th>
-            </tr></thead>
-            <tbody id="faamo-funnel-tbody"></tbody>
-          </table>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="faamo-metrics"></div>
         </div>
-        <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-            <div class="ct" style="margin-bottom:0">Воронка alfa-collection.ru</div>
-            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#a78bfa18;color:#a78bfa;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+        <!-- ВОРОНКИ ПО САЙТАМ -->
+        <div class="g2">
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <div class="ct" style="margin-bottom:0">Воронка faamo.ru</div>
+              <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#2dd4bf18;color:#2dd4bf;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+            </div>
+            <table class="tbl fixed" style="margin-bottom:10px">
+              <thead><tr>
+                <th style="width:30%">Этап</th>
+                <th style="width:12%;text-align:right">Кол-во</th>
+                <th style="width:20%;text-align:center">Из пред.</th>
+                <th style="width:20%;text-align:center">Из заявки</th>
+                <th style="width:18%">Бар</th>
+              </tr></thead>
+              <tbody id="faamo-funnel-tbody"></tbody>
+            </table>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="faamo-metrics"></div>
           </div>
-          <table class="tbl fixed" style="margin-bottom:10px">
-            <thead><tr>
-              <th style="width:30%">Этап</th>
-              <th style="width:12%;text-align:right">Кол-во</th>
-              <th style="width:20%;text-align:center">Из пред.</th>
-              <th style="width:20%;text-align:center">Из заявки</th>
-              <th style="width:18%">Бар</th>
-            </tr></thead>
-            <tbody id="alfa-funnel-tbody"></tbody>
-          </table>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="alfa-metrics"></div>
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <div class="ct" style="margin-bottom:0">Воронка alfa-collection.ru</div>
+              <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#a78bfa18;color:#a78bfa;font-weight:500">Заявка → Запись → Визит → Покупка</span>
+            </div>
+            <table class="tbl fixed" style="margin-bottom:10px">
+              <thead><tr>
+                <th style="width:30%">Этап</th>
+                <th style="width:12%;text-align:right">Кол-во</th>
+                <th style="width:20%;text-align:center">Из пред.</th>
+                <th style="width:20%;text-align:center">Из заявки</th>
+                <th style="width:18%">Бар</th>
+              </tr></thead>
+              <tbody id="alfa-funnel-tbody"></tbody>
+            </table>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="alfa-metrics"></div>
+          </div>
         </div>
       </div>
 
-      <div class="g2">
-        <div class="card"><div class="ct">Динамика лидов</div><div class="chart-wrap" style="height:160px"><canvas id="tchart"></canvas></div></div>
+      <!-- ── ИСТОЧНИКИ: пончики заявки/продажи + эффективность источников ── -->
+      <div class="crm-sec" id="crm-sec-sources" style="display:none">
         <div class="card">
-          <div class="ct">Где теряются лиды</div>
-          <div id="lost"></div>
-          <div class="ct" style="margin-top:16px">Причины отказов</div>
-          <div id="refusal-reasons"></div>
+          <div class="ct">Структура по источникам</div>
+          <div class="donut-wrap">
+            <div class="donut-block"><div class="donut-ttl">Заявки</div><canvas class="donut-canvas" id="dleads"></canvas><div id="dleads-leg"></div></div>
+            <div class="donut-block"><div class="donut-ttl">Продажи</div><canvas class="donut-canvas" id="dbought"></canvas><div id="dbought-leg"></div></div>
+          </div>
+          <div class="ct" style="margin-top:18px">Эффективность источников</div>
+          <table class="tbl fixed">
+            <thead><tr>
+              <th style="width:26%">Источник</th>
+              <th style="width:13%;text-align:right">Заявки</th>
+              <th style="width:13%;text-align:right">Продажи</th>
+              <th style="width:13%;text-align:right">Отказы</th>
+              <th style="width:13%;text-align:right">Конверсия</th>
+              <th style="width:22%">Качество</th>
+            </tr></thead>
+            <tbody id="src-quality"></tbody>
+          </table>
+          <div style="font-size:10px;color:var(--tx3);margin-top:8px">💡 Цифры кликабельны — открывают сделки в AmoCRM</div>
         </div>
       </div>
+
+      <!-- ── ГОРОДА: гео-дерево / таблица (Город → Сайт → Источник) ── -->
+      <div class="crm-sec" id="crm-sec-cities" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div class="ct" style="margin-bottom:0">Город → Сайт → Источник</div>
+            <div class="stabs" style="margin-bottom:0">
+              <button class="stab" id="geo-tab-table" onclick="switchGeoView('table')">Таблица</button>
+              <button class="stab on" id="geo-tab-tree" onclick="switchGeoView('tree')">Дерево</button>
+            </div>
+            <input id="geo-search" oninput="renderGeoFlat()" placeholder="Поиск: город, сайт, источник…" style="margin-left:auto;background:var(--bg3);border:1px solid var(--br2);border-radius:7px;padding:5px 10px;color:var(--tx);font-size:12px;width:220px;display:none">
+          </div>
+          <div id="geo"></div>
+          <div id="geo-flat" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- ── МЕНЕДЖЕРЫ: таблица + мини-воронки + операционные метрики ── -->
+      <div class="crm-sec" id="crm-sec-managers" style="display:none">
+        <div class="card"><div class="ct">Менеджеры</div><div id="mgrs"></div></div>
+      </div>
+
     </div>
 
     <!-- ЗВОНКИ -->
@@ -292,41 +319,50 @@
     <!-- ДИРЕКТ -->
     <div class="page" id="page-direct">
       <div class="mmet" id="dir-summary"></div>
+      <!-- ROI: кампания → расход → заявки → продажи (переключатель разрезов) -->
       <div class="card" style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <div class="ct" style="margin-bottom:0">Кампании</div>
-          <span class="ya-tag">Яндекс Директ</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="ct" style="margin-bottom:0">ROI: расход → продажи</div>
+          <span class="ya-tag">Яндекс Директ × CRM</span>
           <span id="dir-total" style="font-size:12px;color:var(--tx2)"></span>
+          <div class="stabs" id="roi-stabs" style="margin-bottom:0;margin-left:auto">
+            <button class="stab on" data-seg="camp" onclick="switchRoiSeg('camp')">Кампании</button>
+            <button class="stab" data-seg="city" onclick="switchRoiSeg('city')">Города</button>
+            <button class="stab" data-seg="site" onclick="switchRoiSeg('site')">Сайты</button>
+          </div>
         </div>
-        <table class="tbl fixed"><thead><tr>
-          <th style="width:28%">Кампания</th><th style="width:11%">Тип</th>
-          <th style="width:10%;text-align:right">Клики</th><th style="width:11%;text-align:right">Показы</th>
-          <th style="width:8%;text-align:right">CTR</th><th style="width:11%;text-align:right">Расход ₽</th>
-          <th style="width:9%;text-align:right">Ср.клик</th><th style="width:6%;text-align:right">Заявки</th>
-          <th style="width:6%;text-align:right">CPL</th>
-        </tr></thead><tbody id="dir-camps"></tbody></table>
-      </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <div class="ct" style="margin-bottom:0">Ключевые слова</div>
-          <span class="ya-tag">Директ + CRM</span>
-        </div>
-        <table class="tbl fixed"><thead><tr>
-          <th style="width:26%">Ключевое слово</th><th style="width:18%">Кампания</th>
-          <th style="width:9%;text-align:right">Клики</th><th style="width:10%;text-align:right">Расход ₽</th>
-          <th style="width:7%;text-align:right">CTR</th><th style="width:8%;text-align:right">Ср.клик</th>
-          <th style="width:8%;text-align:right">Заявки</th><th style="width:7%;text-align:right">Куплено</th>
-          <th style="width:7%;text-align:right">Конв.</th>
-        </tr></thead><tbody id="dir-kws"></tbody></table>
+        <div id="roi-table"></div>
       </div>
 
-      <!-- ГОРОД → КАНАЛ → ЛИДЫ → ПРОДАЖИ → РАСХОД -->
-      <div class="card" style="margin-top:12px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <div class="ct" style="margin-bottom:0">Город → Канал → Результат</div>
-          <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#4ade8018;color:#4ade80;font-weight:500">CRM + расходы Директа</span>
+      <!-- Неатрибутированный трафик -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct">⚠️ Источник неизвестен</div>
+        <div id="roi-unknown"></div>
+      </div>
+
+      <!-- Ключевые слова: два раздельных среза (см. комментарий в direct.js) -->
+      <div class="g2">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div class="ct" style="margin-bottom:0">Поисковые запросы Директа</div>
+            <span class="ya-tag">клики + расход</span>
+          </div>
+          <table class="tbl fixed"><thead><tr>
+            <th style="width:44%">Запрос</th><th style="width:24%">Кампания</th>
+            <th style="width:12%;text-align:right">Клики</th><th style="width:20%;text-align:right">Расход ₽</th>
+          </tr></thead><tbody id="kw-direct"></tbody></table>
         </div>
-        <div id="city-channel-wrap"></div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div class="ct" style="margin-bottom:0">utm_term из CRM</div>
+            <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#60a5fa18;color:#60a5fa;font-weight:500">заявки + продажи</span>
+          </div>
+          <table class="tbl fixed"><thead><tr>
+            <th style="width:48%">utm_term</th>
+            <th style="width:17%;text-align:right">Заявки</th><th style="width:17%;text-align:right">Продажи</th>
+            <th style="width:18%;text-align:right">Конв.</th>
+          </tr></thead><tbody id="kw-crm"></tbody></table>
+        </div>
       </div>
     </div>
 
