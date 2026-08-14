@@ -4,7 +4,10 @@ dist
 *.local
 .vite
 
-# Бэкенд Apps Script с реальными API-токенами — НИКОГДА не коммитить
-amocrm_final_v2.gs
-amocrm_final_v2.gs.txt
-*.gs
+# ── СЕКРЕТЫ ──
+# Сам amocrm_final_v2.gs теперь версионируется: токенов в нём НЕТ, они лежат
+# в Script Properties проекта Apps Script (см. README-APPS-SCRIPT.md).
+# А вот файлы ниже содержат реальные значения токенов — их коммитить НЕЛЬЗЯ.
+TOKENS.local.md
+*.tokens.bak
+*.gs.txt

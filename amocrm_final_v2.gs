@@ -1,0 +1,810 @@
+// ═══════════════════════════════════════════════════════════
+// КОНФИГУРАЦИЯ
+// ═══════════════════════════════════════════════════════════
+// ── СЕКРЕТЫ ────────────────────────────────────────────────────────────────────
+// Токены НЕ хранятся в коде: репозиторий публичный. Значения лежат в Script Properties
+// этого проекта Apps Script: Настройки проекта → Свойства скрипта.
+// Нужны 4 свойства: AMO_TOKEN, METRIKA_TOKEN, DIRECT_TOKEN, CT_TOKEN.
+// Инструкция по настройке — README-APPS-SCRIPT.md в репозитории.
+const PROPS_        = PropertiesService.getScriptProperties();
+const AMO_TOKEN     = PROPS_.getProperty('AMO_TOKEN')     || '';
+const METRIKA_TOKEN = PROPS_.getProperty('METRIKA_TOKEN') || '';
+const DIRECT_TOKEN  = PROPS_.getProperty('DIRECT_TOKEN')  || '';
+const CT_TOKEN      = PROPS_.getProperty('CT_TOKEN')      || '';
+
+// Какие свойства забыли прописать. Проверяется в doGet, чтобы вместо пустых данных
+// пришла понятная ошибка прямо в интерфейс дашборда.
+function missingSecrets() {
+  return [['AMO_TOKEN', AMO_TOKEN], ['METRIKA_TOKEN', METRIKA_TOKEN],
+          ['DIRECT_TOKEN', DIRECT_TOKEN], ['CT_TOKEN', CT_TOKEN]]
+    .filter(function(p){ return !p[1]; }).map(function(p){ return p[0]; });
+}
+
+// Не секреты — остаются в коде
+const AMO_DOMAIN    = 'igormakarenko877.amocrm.ru';
+
+// ── ВОРОНКИ AMOCRM ──────────────────────────────────────────────────────────────
+// Раньше дашборд забирал сделки ТОЛЬКО из «Продажи» (filter[pipeline_id]=8708346) — остальные
+// 6 воронок выпадали из аналитики и занижали цифры. Теперь забираем все РЕАЛЬНЫЕ воронки, а
+// технические исключаем на уровне запроса к API (мультифильтр filter[pipeline_id][] работает).
+const PIPE_SALES     = 8708346;   // Продажи — основная воронка, её этапы описывает STAGES
+const PIPE_SUPPLY    = 10217954;  // Ждут поставку — клиент не подобрал товар, ждёт поставку
+const PIPE_COND_LOST = 10217962;  // Условный отказ — вся воронка считается ОТКАЗОМ
+const PIPE_DELIVERY  = 10809230;  // Доставка по РФ — «В доставке»: НЕ продажа и НЕ отказ
+const PIPE_COLD      = 11157782;  // Х/Б (холодная база) — источник всегда «Холодный обзвон»
+const PIPE_REGULARS  = 10234910;  // Постоянные клиенты — ИСКЛЮЧЕНА, см. ниже
+const PIPE_ROBOCALL  = 10882086;  // Отказ для автопрозвона — ИСКЛЮЧЕНА (техническая, робот-прозвон)
+
+// ПОЧЕМУ «Постоянные клиенты» (10234910) ИСКЛЮЧЕНА — проверено на реальных данных (июнь 2026):
+//   • все 289 сделок созданы роботом (created_by=0), ни одной — человеком;
+//   • название вида «Автосделка: 1,06 купил …» — ссылка на уже состоявшуюся покупку;
+//   • 285 из 289 (98.6%) имеют сделку того же контакта в «Продажи», медиана — 1.4 дня ПОСЛЕ неё;
+//   • у всех 53 сделок с ненулевой суммой price совпал с родительской выигранной сделкой 53/53.
+// Т.е. это роботные КОПИИ уже учтённых продаж («База купивших» для прогрева), а не новая выручка.
+// Если их учитывать, продажи за июнь раздуваются 503 → 734 (+46%) на том же самом доходе.
+// Чтобы вернуть их в аналитику — перенесите PIPE_REGULARS из PIPES_EXCLUDED в PIPES_ALLOWED.
+const PIPES_ALLOWED  = [PIPE_SALES, PIPE_SUPPLY, PIPE_COND_LOST, PIPE_DELIVERY, PIPE_COLD];
+const PIPES_EXCLUDED = [PIPE_REGULARS, PIPE_ROBOCALL];
+const PIPE_NAMES = {
+  [PIPE_SALES]:'Продажи', [PIPE_SUPPLY]:'Ждут поставку', [PIPE_COND_LOST]:'Условный отказ',
+  [PIPE_DELIVERY]:'Доставка по РФ', [PIPE_COLD]:'Х/Б (холодная база)',
+  [PIPE_REGULARS]:'Постоянные клиенты', [PIPE_ROBOCALL]:'Отказ для автопрозвона'
+};
+
+const STATUS_BOUGHT = 142;      // «Купили» — системный статус, ОБЩИЙ для всех воронок
+const STATUS_LOST   = 143;      // «Отказ»  — системный статус, ОБЩИЙ для всех воронок
+const STATUS_NEW    = 70537282; // «Новая заявка» — необработанная сделка (Недозвон = уже касание менеджера, не считается)
+const VISITED_IDS   = new Set([71298010, 142]);
+
+const CT_SITES      = {'alfa-collection.ru': 60736, 'faamo.ru': 76080};
+const METRIKA_IDS   = {'alfa-collection.ru': 53457376, 'faamo.ru': 99303719};
+
+const STAGES = [
+  {id:70537282, name:'Новая заявка'},
+  {id:70895782, name:'Недозвон'},
+  {id:80892854, name:'Взят в работу'},
+  {id:70537278, name:'Пригласили в магазин'},
+  {id:71298010, name:'Посетил магазин'},
+  {id:142,      name:'Купили'}
+];
+
+// ═══════════════════════════════════════════════════════════
+// РОУТИНГ — вычисляем даты по периоду
+// ═══════════════════════════════════════════════════════════
+// Ленивая загрузка по вкладке: фронт шлёт &tab= и мержит ответ в state.raw. Каждая вкладка тянет
+// только свои источники, чтобы не дёргать все внешние API на каждый запрос:
+//   crm     → buildAmoData (воронки/менеджеры/гео/geoFlat/источники/yandex/cityChannels/отказы/тренд)
+//   calls   → Calltouch
+//   metrika → Яндекс.Метрика
+//   direct  → buildAmoData (нужны yandex + geoFlat) + кампании и ключи Директа
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  try {
+    const miss = missingSecrets();
+    if (miss.length) throw new Error('В Apps Script не заданы свойства скрипта: ' + miss.join(', ') +
+      '. Настройки проекта → Свойства скрипта.');
+
+    const {fromTs, toTs, date1, date2} = resolvePeriod(p);
+    const tab = p.tab || 'crm';
+    let out = {};
+
+    if (tab === 'calls') {
+      out.calltouch = buildCalltouchData(date1, date2);
+    } else if (tab === 'metrika') {
+      out.metrika = buildMetrikaData(date1, date2);
+    } else if (tab === 'direct') {
+      out = buildAmoData(fromTs, toTs);                    // yandex[] + geoFlat[] для ROI-разрезов
+      out.direct = fetchDirectCampaigns(date1, date2);
+      out.directKeywords = fetchDirectKeywords(date1, date2);
+    } else { // crm (по умолчанию)
+      out = buildAmoData(fromTs, toTs);
+    }
+
+    out.updatedAt = Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM.yyyy HH:mm');
+    return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({error: err.message}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Вычисляет fromTs/toTs/date1/date2 по параметру period или from/to
+function resolvePeriod(p) {
+  // Московское время
+  const nowUtc = new Date();
+  const mskOffset = 3 * 3600000;
+  const nowMsk = new Date(nowUtc.getTime() + mskOffset);
+
+  // Вспомогательные функции
+  function mskDate(y, m, d) { // returns Date in UTC representing MSK midnight
+    return new Date(Date.UTC(y, m, d) - mskOffset);
+  }
+  function toYMD(d) {
+    const msk = new Date(d.getTime() + mskOffset);
+    return msk.toISOString().slice(0,10);
+  }
+
+  const Y = nowMsk.getUTCFullYear();
+  const M = nowMsk.getUTCMonth(); // 0-based
+  const D = nowMsk.getUTCDate();
+  const DOW = nowMsk.getUTCDay(); // 0=Sun
+  const mondayOffset = DOW === 0 ? -6 : 1 - DOW; // days to last Monday
+
+  let from, to;
+
+  if (p.from && p.to) {
+    from = mskDate(...p.from.split('-').map(Number).map((v,i)=>i===1?v-1:v));
+    to   = new Date(mskDate(...p.to.split('-').map(Number).map((v,i)=>i===1?v-1:v)).getTime() + 86399999);
+  } else {
+    const period = p.period || 'today';
+    switch(period) {
+      case 'today':
+        from = mskDate(Y, M, D);
+        to   = new Date(from.getTime() + 86399999);
+        break;
+      case 'yesterday':
+        from = mskDate(Y, M, D - 1);
+        to   = new Date(from.getTime() + 86399999);
+        break;
+      case 'this_week': // Пн–сегодня
+        from = mskDate(Y, M, D + mondayOffset);
+        to   = new Date(mskDate(Y, M, D).getTime() + 86399999);
+        break;
+      case 'last_week': // Прошлая Пн–Вс
+        from = mskDate(Y, M, D + mondayOffset - 7);
+        to   = new Date(mskDate(Y, M, D + mondayOffset - 1).getTime() + 86399999);
+        break;
+      case 'this_month':
+        from = mskDate(Y, M, 1);
+        to   = new Date(mskDate(Y, M, D).getTime() + 86399999);
+        break;
+      case 'last_month':
+        from = mskDate(Y, M - 1, 1);
+        to   = new Date(mskDate(Y, M, 0).getTime() + 86399999); // last day of prev month
+        break;
+      case '90days':
+        from = mskDate(Y, M, D - 89);
+        to   = new Date(mskDate(Y, M, D).getTime() + 86399999);
+        break;
+      default:
+        from = mskDate(Y, M, D);
+        to   = new Date(from.getTime() + 86399999);
+    }
+  }
+
+  return {
+    fromTs: Math.floor(from.getTime() / 1000),
+    toTs:   Math.floor(to.getTime()   / 1000),
+    date1:  toYMD(from),
+    date2:  toYMD(to)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// CALLTOUCH
+// ═══════════════════════════════════════════════════════════
+function buildCalltouchData(date1, date2) {
+  const result = {};
+  for (const [site, siteId] of Object.entries(CT_SITES)) {
+    const out = {total:0, answered:0, missed:0, unique:0, target:0, avgDuration:0, bySrc:[], byCity:[]};
+    try {
+      let page = 1, all = [];
+      while (true) {
+        // Calltouch требует формат DD/MM/YYYY
+        const toCtDate = d => d.split('-').reverse().join('/');
+        const df = toCtDate(date1), dt = toCtDate(date2);
+        const url = `https://api.calltouch.ru/calls-service/RestAPI/${siteId}/calls-diary/calls?clientApiId=${CT_TOKEN}&dateFrom=${df}&dateTo=${dt}&page=${page}&perPage=1000`;
+        const r = UrlFetchApp.fetch(url, {muteHttpExceptions:true});
+        if (r.getResponseCode() !== 200) { Logger.log('CT '+site+' err: '+r.getResponseCode()); break; }
+        const d = JSON.parse(r.getContentText());
+        const recs = d.records || [];
+        all = all.concat(recs);
+        if (recs.length < 1000 || page >= (d.pageTotal||1)) break;
+        page++; if (page > 10) break;
+      }
+
+      out.total    = all.length;
+      out.answered = all.filter(c => c.successful === true).length;
+      out.missed   = all.filter(c => c.successful === false).length;
+      out.unique   = all.filter(c => c.uniqueCall === true).length;
+      out.target   = all.filter(c => c.targetCall === true).length;
+
+      const durs = all.filter(c => c.successful && c.duration > 0).map(c => c.duration);
+      out.avgDuration = durs.length ? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : 0;
+
+      // По источникам
+      const srcMap = {};
+      for (const c of all) {
+        let src = (c.source || 'не указано').toLowerCase();
+        if (src.includes('yandex') && (src.includes('direkt') || src.includes('direct') || c.medium === 'cpc')) src = 'Яндекс Директ';
+        else if (src === 'yandex') src = 'Яндекс SEO';
+        else if (src === 'google') src = 'Google SEO';
+        else if (src.includes('google')) src = 'Google';
+        else if (src.includes('2gis')) src = '2GIS';
+        else if (src.includes('vk')) src = 'VK';
+        else if (src.includes('instagram') || src === 'ig') src = 'Instagram';
+        else if (src.includes('telegram')) src = 'Telegram';
+        else if (src === 'direct' || src === '(direct)') src = 'Прямой';
+        else if (!src || src === 'не указано') src = 'Не указано';
+        if (!srcMap[src]) srcMap[src] = {calls:0, answered:0, target:0};
+        srcMap[src].calls++;
+        if (c.successful) srcMap[src].answered++;
+        if (c.targetCall) srcMap[src].target++;
+      }
+      out.bySrc = Object.entries(srcMap)
+        .map(([src,v]) => ({src, calls:v.calls, answered:v.answered, missed:v.calls-v.answered, target:v.target}))
+        .sort((a,b) => b.calls-a.calls).slice(0,15);
+
+      // По городам
+      const cityMap = {};
+      for (const c of all) {
+        const city = (c.city || 'не указано');
+        if (!cityMap[city]) cityMap[city] = {calls:0, answered:0};
+        cityMap[city].calls++;
+        if (c.successful) cityMap[city].answered++;
+      }
+      out.byCity = Object.entries(cityMap)
+        .map(([city,v]) => ({city, calls:v.calls, answered:v.answered}))
+        .sort((a,b) => b.calls-a.calls).slice(0,10);
+
+    } catch(e) { Logger.log('CT err '+site+': '+e.message); }
+    result[site] = out;
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ЯНДЕКС ДИРЕКТ
+// ═══════════════════════════════════════════════════════════
+function directReport(body) {
+  const r = UrlFetchApp.fetch('https://api.direct.yandex.com/json/v5/reports', {
+    method:'POST',
+    headers:{'Authorization':'Bearer '+DIRECT_TOKEN,'Accept-Language':'ru',
+      'processingMode':'auto','returnMoneyInMicros':'false',
+      'skipReportHeader':'true','skipReportSummary':'true'},
+    payload: JSON.stringify(body), muteHttpExceptions:true
+  });
+  if (![200,201,202].includes(r.getResponseCode())) return null;
+  return r.getContentText().trim();
+}
+
+function parseTsv(tsv) {
+  if (!tsv) return {headers:[], rows:[]};
+  const lines = tsv.split('\n').filter(l=>l.trim());
+  if (!lines.length) return {headers:[], rows:[]};
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const rows = lines.slice(1).map(l => {
+    const cols = l.split('\t');
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = (cols[i]||'').trim());
+    return obj;
+  });
+  return {headers, rows};
+}
+
+function fetchDirectCampaigns(date1, date2) {
+  const tsv = directReport({method:'get',params:{
+    SelectionCriteria:{DateFrom:date1,DateTo:date2},
+    FieldNames:['CampaignId','CampaignName','CampaignType','Clicks','Impressions','Ctr','Cost','AvgCpc'],
+    ReportName:'campaigns_'+date1+'_'+date2,   // Директ требует уникальное имя отчёта, иначе ошибка
+    ReportType:'CAMPAIGN_PERFORMANCE_REPORT',DateRangeType:'CUSTOM_DATE',
+    Format:'TSV',IncludeVAT:'YES',IncludeDiscount:'YES'
+  }});
+  const {rows} = parseTsv(tsv);
+  const camps = rows.map(r => ({
+    id: r.CampaignId||'', name: r.CampaignName||'—', type: r.CampaignType||'—',
+    clicks: parseInt(r.Clicks)||0, impressions: parseInt(r.Impressions)||0,
+    ctr: Math.round((parseFloat(r.Ctr)||0)*100)/100,
+    cost: Math.round(parseFloat(r.Cost)||0),
+    avgCpc: Math.round(parseFloat(r.AvgCpc)||0)
+  })).sort((a,b)=>b.clicks-a.clicks);
+  const totals = {
+    clicks: camps.reduce((s,r)=>s+r.clicks,0),
+    cost:   camps.reduce((s,r)=>s+r.cost,0),
+    impressions: camps.reduce((s,r)=>s+r.impressions,0)
+  };
+  return {campaigns: camps, totals};
+}
+
+function fetchDirectKeywords(date1, date2) {
+  const tsv = directReport({method:'get',params:{
+    SelectionCriteria:{DateFrom:date1,DateTo:date2},
+    FieldNames:['CampaignName','Criterion','Clicks','Impressions','Ctr','Cost','AvgCpc'],
+    ReportName:'keywords_'+date1+'_'+date2,   // уникальное имя отчёта (требование API Директа)
+    ReportType:'SEARCH_QUERY_PERFORMANCE_REPORT',DateRangeType:'CUSTOM_DATE',
+    Format:'TSV',IncludeVAT:'YES',IncludeDiscount:'YES'
+  }});
+  const {rows} = parseTsv(tsv);
+  return rows.map(r => ({
+    keyword: r.Criterion||'—', campaign: r.CampaignName||'—',
+    clicks: parseInt(r.Clicks)||0, impressions: parseInt(r.Impressions)||0,
+    ctr: Math.round((parseFloat(r.Ctr)||0)*100)/100,
+    cost: Math.round(parseFloat(r.Cost)||0),
+    avgCpc: Math.round(parseFloat(r.AvgCpc)||0)
+  })).sort((a,b)=>b.clicks-a.clicks).slice(0,100);
+}
+
+// ═══════════════════════════════════════════════════════════
+// ЯНДЕКС МЕТРИКА
+// ═══════════════════════════════════════════════════════════
+function mFetch(id, params) {
+  const qs = Object.entries({ids:id,...params}).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const r = UrlFetchApp.fetch('https://api-metrika.yandex.net/stat/v1/data?'+qs,
+    {headers:{'Authorization':'OAuth '+METRIKA_TOKEN}, muteHttpExceptions:true});
+  return r.getResponseCode()===200 ? JSON.parse(r.getContentText()) : null;
+}
+
+function buildMetrikaData(date1, date2) {
+  const result = {};
+  const SRC_NAMES = {'ad':'Реклама','direct':'Прямые заходы','organic':'Поиск (SEO)',
+    'internal':'Внутренние','referral':'Ссылки','social':'Соцсети',
+    'email':'Email','recommendation':'Рекомендации','undefined':'Не определено'};
+
+  for (const [site, cid] of Object.entries(METRIKA_IDS)) {
+    const d = {visits:0,users:0,bounceRate:0,pageDepth:0,avgDuration:0,bySource:[],byUtm:[],trend:[]};
+
+    const sum = mFetch(cid,{metrics:'ym:s:visits,ym:s:users,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds',date1,date2,accuracy:'full'});
+    if (sum&&sum.totals) {
+      d.visits=Math.round(sum.totals[0]||0); d.users=Math.round(sum.totals[1]||0);
+      d.bounceRate=Math.round(sum.totals[2]||0); d.pageDepth=Math.round((sum.totals[3]||0)*10)/10;
+      d.avgDuration=Math.round(sum.totals[4]||0);
+    }
+
+    const bySrc = mFetch(cid,{dimensions:'ym:s:lastSignificantSource',metrics:'ym:s:visits,ym:s:users,ym:s:bounceRate',date1,date2,limit:20,sort:'-ym:s:visits',accuracy:'full'});
+    if (bySrc&&bySrc.data) d.bySource=bySrc.data.map(row=>({
+      source: SRC_NAMES[(row.dimensions[0].name||'').toLowerCase()]||row.dimensions[0].name||'—',
+      visits:Math.round(row.metrics[0]),users:Math.round(row.metrics[1]),bounceRate:Math.round(row.metrics[2])
+    }));
+
+    const byUtm = mFetch(cid,{dimensions:'ym:s:UTMSource',metrics:'ym:s:visits,ym:s:users,ym:s:bounceRate',date1,date2,limit:20,sort:'-ym:s:visits',accuracy:'full'});
+    if (byUtm&&byUtm.data) d.byUtm=byUtm.data
+      .filter(row=>row.dimensions[0].name&&row.dimensions[0].name!=='(none)'&&row.dimensions[0].name!=='not set')
+      .map(row=>({source:row.dimensions[0].name,visits:Math.round(row.metrics[0]),users:Math.round(row.metrics[1]),bounceRate:Math.round(row.metrics[2])}));
+
+    const trend = mFetch(cid,{dimensions:'ym:s:date',metrics:'ym:s:visits,ym:s:users',date1,date2,sort:'ym:s:date',limit:100,accuracy:'full'});
+    if (trend&&trend.data) d.trend=trend.data.map(row=>{
+      const raw=row.dimensions[0].name||'';
+      const dt=raw.length===8?raw.slice(6,8)+'.'+raw.slice(4,6):raw.slice(8,10)+'.'+raw.slice(5,7);
+      return{date:dt,visits:Math.round(row.metrics[0]),users:Math.round(row.metrics[1])};
+    });
+
+    result[site]=d;
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════
+// AMO CRM
+// ═══════════════════════════════════════════════════════════
+function amoFetch(path) {
+  try {
+    const r=UrlFetchApp.fetch('https://'+AMO_DOMAIN+path,{headers:{'Authorization':'Bearer '+AMO_TOKEN},muteHttpExceptions:true});
+    return r.getResponseCode()===200?JSON.parse(r.getContentText()):null;
+  } catch(e){return null;}
+}
+
+// Собирает признаки источника сделки за ОДИН проход по полям (раньше отдавал только строку):
+//   raw      — строка источника: utm_source, иначе «Источник сделки Название» (кроме тех.значений)
+//   medium   — utm_medium (платный трафик Директа помечен 'cpc')
+//   srcName  — сырое «Источник сделки Название» (значение 'Интерфейс' → сделка заведена вручную)
+//   campaign — utm_campaign (числовой = ID кампании Директа → тоже платная реклама; на будущее)
+//
+// ПРИОРИТЕТ источника (utm_source разложен на несколько полей AmoCRM):
+//   1) «(utm_source) Сводный» — консолидированное значение (самое чистое)
+//   2) «Источник (utm_source)» / «utm_source» — сырые поля
+// «Запись на время» — это виджет онлайн-записи YClients, а НЕ источник трафика. На реале (июнь)
+// он проставлен в Сводный у 174 сделок и маскирует реальный источник (у 108 он лежит в следующем
+// поле: google / yandex_faamo_msk / (direct) …). Поэтому если поле = «запись» — пропускаем его.
+function getSource(fields) {
+  if (!fields) return {raw:'', medium:'', srcName:'', campaign:''};
+  let svod='', utmOther='', ct='', medium='', srcName='', campaign='';
+  for (const f of fields) {
+    const fn=(f.field_name||'').toLowerCase();
+    const val=f.values&&f.values[0]?String(f.values[0].value||'').trim():'';
+    if (!val||val==='<не заполнено>'||val==='0') continue;
+    if (fn.includes('utm_source')) {                                         // «источник» — несколько полей
+      if (fn.includes('сводн')) { if(!svod)svod=val; }                       //   Сводный — приоритет
+      else if (!utmOther) utmOther=val;                                      //   Источник(utm_source) / utm_source
+    }
+    if (fn.includes('utm_medium'))   { if(!medium)medium=val; }
+    if (fn.includes('utm_campaign')) { if(!campaign)campaign=val; }
+    if (fn==='источник сделки название') {
+      if(!srcName)srcName=val;                                              // сырое, включая 'Интерфейс'
+      if(!ct&&!['Интерфейс','Виртуальная АТС МегаФон','Calltouch'].includes(val))ct=val;
+    }
+  }
+  const isZap = v => v.toLowerCase().includes('запись');                    // «Запись на время» — не источник
+  let utm='';
+  for (const cand of [svod, utmOther]) { if (cand && !isZap(cand)) { utm=cand; break; } }
+  return {raw: utm||ct||'', medium, srcName, campaign};
+}
+
+// Классифицирует источник сделки. Вход — объект из getSource() {raw, medium, srcName, campaign}.
+//
+// ПРИНЦИП 1 — тип трафика, а не «в строке встретилось yandex». Прежняя версия валила в «Яндекс
+// Директ» ВСЁ яндексовое (реклама + органика + карты + ручной ввод) → 475/173 на июне вместо
+// ~130/31 настоящей рекламы. Теперь по приоритету (важен порядок!):
+//   а) карты (я.карты / гугл карты) → всегда ОРГАНИКА, даже если вдруг cpc;
+//   б) платный признак utm_medium=cpc → реклама («Яндекс Директ» / «Google Ads»);
+//   в) иначе → органика («Яндекс (органика)» / «Google (органика)»).
+// Категории «Созданы вручную» БОЛЬШЕ НЕТ (это способ создания сделки, а не источник): ручные
+// яндекс-сделки без cpc уходят в органику, где им и место.
+//
+// ПРИНЦИП 2 — склейка дублей ручного ввода. Менеджеры пишут источник кто как (регистр,
+// сокращения, латиница/кириллица) — приводим к нижнему регистру и склеиваем по includes:
+// direct/(direct)/прямой → «Прямой заход», любой «постоян» → «Постоянный клиент», и т.д.
+// Внутренний мусор (*.amocrm.ru, utm_source='Интерфейс') → «Не указано».
+function normSrc(src) {
+  src = src || {};
+  const raw    = src.raw || '';
+  const medium = (src.medium || '').toLowerCase();
+  const s   = raw.toLowerCase().trim();
+  const hay = (raw + ' ' + (src.medium || '')).toLowerCase();   // источник+канал: признак «карт» бывает и в utm_medium
+
+  if (!s||s==='<не заполнено>'||s==='0') return 'Не указано';
+  if (s.includes('amocrm.ru')||s==='интерфейс') return 'Не указано';   // внутренний мусор, не источник
+
+  const isPaid = medium.includes('cpc');                              // платный трафик = utm_medium содержит cpc
+
+  // ── КАРТЫ — всегда органика, приоритет ВЫШЕ cpc ──────────────────────────────
+  if (hay.includes('geoadv')) return 'GeoAdv';
+  if (hay.includes('карт')||hay.includes('/maps'))
+    return (hay.includes('google')||hay.includes('гугл')) ? 'Google Карты' : 'Яндекс Карты';
+
+  // ── ЯНДЕКС по типу трафика ───────────────────────────────────────────────────
+  const isYandex = s.includes('yandex')||s.includes('яндекс')||
+                   s.includes('ya_')||/(^|[^a-zа-яё])ya([^a-zа-яё]|$)/.test(s)||
+                   s.includes('директ')||s.includes('direkt')||s.includes('контекст');
+  if (isYandex) return isPaid ? 'Яндекс Директ' : 'Яндекс (органика)';
+
+  // ── GOOGLE по типу трафика ───────────────────────────────────────────────────
+  if (s.includes('google')||s.includes('гугл')) return isPaid ? 'Google Ads' : 'Google (органика)';
+
+  // ── Склейка дублей ручного ввода ─────────────────────────────────────────────
+  if (s.includes('direct')||s.includes('прям')) return 'Прямой заход';            // Direct / (direct) / Прямой переход
+  if (s.includes('постоян')||/пост\.\s*клиент/.test(s)) return 'Постоянный клиент';// постоянник / Пост. клиент
+  if (s.includes('рекоменд')||s.includes('реферал')) return 'Рекомендации';
+  if (s.includes('2гис')||s.includes('2gis')||s.includes('2 гис')) return '2GIS';
+  if (s==='вк'||s.includes('vk')) return 'VK';                                     // вк / vk / vk.com / away.vk
+  if (s.includes('telegram')||s.includes('тг')) return 'Telegram';
+  if (s.includes('instagram')||s.includes('инстаграм')||s==='ig') return 'Instagram';
+  if (s.includes('chatgpt')||s.includes('deepseek')||s.includes('deep seek')||
+      s.includes('нейросет')||s.includes('perplexity')||
+      /(^|[^а-яё])ии([^а-яё]|$)/.test(s)) return 'Нейросети (ИИ)';               // любые ИИ
+  if (s.includes('whatsapp')) return 'WhatsApp';
+  if (s.includes('max')) return 'MAX';                                            // Max: Рабочий Max / [MAX] Мах_Bot
+  if (s.includes('запись на время')||s.includes('yclients')) return 'Запись YClients';
+  if (s.includes('улиц')||s.includes('трафик магазин')) return 'С улицы / офлайн';
+  return raw.trim()||'Другое';
+}
+
+function normCity(raw) {
+  const s=(raw||'').toLowerCase().trim();
+  if (s.includes('москв')||s.includes('msk')) return 'Москва';
+  if (s.includes('петербург')||s.includes('спб')||s.includes('spb')||s.includes('питер')) return 'Санкт-Петербург';
+  return raw.trim()||'Не указано';
+}
+
+function normSite(raw) {
+  const s=(raw||'').toLowerCase().trim();
+  if (/^\d+$/.test(s)||!s) return 'Не указано';
+  if (s.includes('faamo')) return 'faamo.ru';
+  if (s.includes('alfa')) return 'alfa-collection.ru';
+  if (s.includes('kurtki')) return 'kurtki-i-parki.ru';
+  if (s.includes('.ru')||s.includes('.com')) return raw.trim();
+  return 'Не указано';
+}
+
+// Определяет сайт сделки КАСКАДОМ (первое поле, где сайт распознан) — раньше смотрели только
+// «Название сайта в Calltouch», а оно заполнено лишь у 625 из 1488 сделок, поэтому воронки сайтов
+// были почти пустыми. Порядок (важен!):
+//   1) «Название сайта в Calltouch» — текст (faamo/alfa/kurtki) через normSite
+//   2) «ID сайта в Calltouch» — числовой ID Calltouch (76080=faamo, 60736=alfa, 61430=kurtki)
+//   3) «Ютм» — подстрока faamo/alfa (терпимо к опечаткам: 'alfa-collection' без .ru, 'faamo.r')
+//   4) иначе — «Не указано» (в воронки сайтов не попадёт; в гео — отдельный бакет)
+// Реал (июнь, 1488 сделок): распознавание alfa 446→723, faamo 179→274.
+const CT_SITE_BY_ID = {'76080':'faamo.ru', '60736':'alfa-collection.ru', '61430':'kurtki-i-parki.ru'};
+function getSite(fields) {
+  const byName = normSite(gf(fields,['название сайта в calltouch','название сайта calltouch']));
+  if (byName!=='Не указано') return byName;
+  const id = (gf(fields,['id сайта в calltouch','id сайта calltouch'])||'').trim().replace(/\.0+$/,'');
+  if (CT_SITE_BY_ID[id]) return CT_SITE_BY_ID[id];
+  const utm = (gf(fields,['ютм'])||'').toLowerCase();
+  if (utm.includes('faamo')) return 'faamo.ru';
+  if (utm.includes('alfa'))  return 'alfa-collection.ru';
+  return 'Не указано';
+}
+
+function gf(fields, names) {
+  if (!fields) return '';
+  for (const f of fields) {
+    const fn=(f.field_name||'').toLowerCase();
+    for (const n of names) if (fn.includes(n.toLowerCase())) return f.values&&f.values[0]?String(f.values[0].value||'').trim():'';
+  }
+  return '';
+}
+
+// Причина отказа: основное поле «Причина» (заполнено у 727/730 отказов на реале), иначе
+// «Комментарий отказа». Пустая Причина → падаем на комментарий (gf вернёт '' у пустого поля).
+function getRefusalReason(fields) {
+  let reason = gf(fields, ['причина']);
+  if (!reason) reason = gf(fields, ['комментарий отказа']);
+  return (reason || '').trim();
+}
+
+// Забирает сделки из ВСЕХ реальных воронок (PIPES_ALLOWED) — технические воронки отсекаются
+// самим API через мультифильтр filter[pipeline_id][]=…, поэтому лишние сделки даже не качаются
+// (на июне это экономит ~891 сделку автопрозвона + 289 роботных копий = 1180 из 2637).
+// Лимит страниц поднят с 20 до 40: воронок стало больше, объём вырос.
+function fetchLeads(fromTs, toTs) {
+  const pipeQs = PIPES_ALLOWED.map(id=>`filter[pipeline_id][]=${id}`).join('&');
+  const all=[]; let page=1;
+  while (true) {
+    const d=amoFetch(`/api/v4/leads?with=custom_fields&limit=250&page=${page}&filter[created_at][from]=${fromTs}&filter[created_at][to]=${toTs}&${pipeQs}`);
+    if (!d) break;
+    const items=d._embedded&&d._embedded.leads?d._embedded.leads:[];
+    if (!items.length) break;
+    all.push(...items); if(items.length<250)break; page++; if(page>40)break;
+  }
+  return all;
+}
+
+// Классификация сделки с учётом воронки. Возвращает одно из:
+//   'bought'   — продажа
+//   'lost'     — отказ
+//   'supply'   — «Ждут поставку»: ни продажа, ни отказ, и НЕ «в работе»
+//   'delivery' — «В доставке»: заказ оформлен, товар в пути, продажа ещё НЕ засчитана
+//   'active'   — в работе
+//
+// Решения по воронкам (заданы заказчиком):
+//   • Условный отказ (10217962) — вся воронка = ОТКАЗ, статус внутри не смотрим.
+//   • Доставка по РФ (10809230) — НИКОГДА не продажа, даже если статус внутри = 142. Продажа
+//     засчитывается только когда сделка физически переедет в «Продажи» со статусом 142.
+//     (на реале это 4 сделки со статусом 142 за 7.5 мес — они сознательно не идут в bought)
+//   • Ждут поставку (10217954) — если поставка пришла и сделку закрыли (142) или отказались (143),
+//     это уже состоявшийся исход и он считается; всё остальное = категория «Ждут поставку».
+//   • Продажи (8708346) и Х/Б (11157782) — обычная логика по status_id.
+function classifyLead(l) {
+  const p = l.pipeline_id;
+  if (p === PIPE_COND_LOST) return 'lost';
+  if (p === PIPE_DELIVERY)  return 'delivery';
+  if (p === PIPE_SUPPLY) {
+    if (l.status_id === STATUS_BOUGHT) return 'bought';
+    if (l.status_id === STATUS_LOST)   return 'lost';
+    return 'supply';
+  }
+  if (l.status_id === STATUS_BOUGHT) return 'bought';
+  if (l.status_id === STATUS_LOST)   return 'lost';
+  return 'active';
+}
+
+// Источник сделки с учётом воронки: у сделок Х/Б источник — всегда «Холодный обзвон»,
+// независимо от utm-полей (это обзвон холодной базы, а не рекламный трафик, и смешивать его
+// с Директом/Google нельзя). Для остальных воронок — обычная классификация по полям.
+function leadSource(l) {
+  if (l.pipeline_id === PIPE_COLD) return 'Холодный обзвон';
+  return normSrc(getSource(l.custom_fields_values||[]));
+}
+
+// Воронка по конкретному сайту: накопительно по этапам (Заявка → Пригласили → Посетил → Купили).
+// siteName — значение из normSite ('faamo.ru' | 'alfa-collection.ru'). Логика та же, что у общей
+// воронки CRM: этап засчитан, если текущий статус сделки достиг его порядка (o >= порог); «Отказ»
+// (143) в STAGES отсутствует, поэтому в этапы не попадает, но в total (все заявки сайта) учтён.
+// Формат ответа = то, что ждёт renderSiteFunnel во фронте: {total,invited,visited,bought,conv1..4}.
+function calcSiteFunnel(leads, siteName) {
+  const stOrd={}; STAGES.forEach((s,i)=>stOrd[s.id]=i);
+  const oInvited=stOrd[70537278];        // «Пригласили в магазин»
+  const oVisited=stOrd[71298010];        // «Посетил магазин»
+  const oBought =stOrd[STATUS_BOUGHT];   // «Купили»
+  let total=0,invited=0,visited=0,bought=0;
+  for(const l of leads){
+    if(l.pipeline_id!==PIPE_SALES)continue;   // этапы STAGES существуют только в воронке «Продажи»
+    const f=l.custom_fields_values||[];
+    if(getSite(f)!==siteName)continue;
+    total++;
+    const o=stOrd[l.status_id];
+    if(o===undefined)continue;           // «Отказ» (143) — нет в этапах, как и в общей воронке
+    if(o>=oInvited)invited++;
+    if(o>=oVisited)visited++;
+    if(o>=oBought )bought++;
+  }
+  const pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  return {total,invited,visited,bought,
+    conv1:pct(invited,total),     // Заявка → Пригласили
+    conv2:pct(visited,invited),   // Пригласили → Посетил
+    conv3:pct(bought,visited),    // Посетил → Купили
+    conv4:pct(bought,total)};     // Заявка → Купили (итого)
+}
+
+function buildAmoData(fromTs, toTs) {
+  const leads=fetchLeads(fromTs,toTs);
+  const umap={}; const ud=amoFetch('/api/v4/users?limit=50');
+  if(ud&&ud._embedded) for(const u of ud._embedded.users||[]) umap[u.id]=u.name;
+
+  // Счётчики по классификации с учётом воронки (см. classifyLead).
+  // «Ждут поставку» и «В доставке» — отдельные категории: они НЕ входят ни в bought, ни в active,
+  // поэтому total = bought + lost + active + supply + delivery.
+  const total=leads.length;
+  let bought=0, lost=0, active=0, supply=0, delivery=0;
+  const supplyIds=[], deliveryIds=[];
+  for(const l of leads){
+    switch(classifyLead(l)){
+      case 'bought':   bought++; break;
+      case 'lost':     lost++;   break;
+      case 'supply':   supply++;   if(supplyIds.length<50)supplyIds.push(l.id);   break;
+      case 'delivery': delivery++; if(deliveryIds.length<50)deliveryIds.push(l.id); break;
+      default:         active++;
+    }
+  }
+  // «Посетил магазин» — этап воронки «Продажи»; статус 142 общий для всех воронок, поэтому без
+  // фильтра по воронке сюда попадали бы покупки из Х/Б и «Ждут поставку», которые в магазине не были.
+  const visitedCount=leads.filter(l=>l.pipeline_id===PIPE_SALES&&VISITED_IDS.has(l.status_id)).length;
+  const visitedPct=total>0?Math.round(visitedCount/total*100):0;
+
+  // Воронка накопительно — ТОЛЬКО по воронке «Продажи»: STAGES описывает её этапы, а у остальных
+  // воронок свои статусы. Статусы 142/143 общие, поэтому без этого фильтра сделки из Х/Б,
+  // «Ждут поставку» и «Условного отказа» протекали бы через все этапы и раздували воронку.
+  const stOrd={}; STAGES.forEach((s,i)=>stOrd[s.id]=i);
+  const stMap={};
+  for(const l of leads){
+    if(l.pipeline_id!==PIPE_SALES)continue;
+    const o=stOrd[l.status_id];if(o===undefined)continue;
+    for(let i=0;i<=o;i++)stMap[STAGES[i].id]=(stMap[STAGES[i].id]||0)+1;
+  }
+  const funnel=STAGES.map(s=>({name:s.name,count:stMap[s.id]||0})).filter(s=>s.count>0);
+
+  // Менеджеры — операционная аналитика
+  const mgrMap={};
+  for(const l of leads){
+    const uid=l.responsible_user_id; if(!uid)continue;
+    if(!mgrMap[uid])mgrMap[uid]={
+      name:umap[uid]||'ID:'+uid,
+      leads:0,bought:0,lost:0,visited:0,active:0,unprocessed:0,supply:0,delivery:0,
+      byStage:{},                                    // {status_id: кол-во} — текущее распределение по этапам (мини-воронка)
+      leadIds:[],boughtIds:[],activeIds:[],unprocessedIds:[]
+    };
+    const m=mgrMap[uid];
+    const cls=classifyLead(l);
+    m.leads++;
+    if(m.leadIds.length<50)m.leadIds.push(l.id);
+    // Мини-воронка и «Посетил магазин» — только по «Продажам» (STAGES = её этапы, см. выше)
+    if(l.pipeline_id===PIPE_SALES){
+      m.byStage[l.status_id]=(m.byStage[l.status_id]||0)+1;
+      if(VISITED_IDS.has(l.status_id))m.visited++;
+    }
+    if(cls==='bought'){m.bought++;if(m.boughtIds.length<50)m.boughtIds.push(l.id);}
+    if(cls==='lost')m.lost++;
+    if(cls==='supply')m.supply++;
+    if(cls==='delivery')m.delivery++;
+    // В работе: не продажа, не отказ, и НЕ «ждут поставку»/«в доставке» (это отдельные категории)
+    if(cls==='active'){m.active++;if(m.activeIds.length<50)m.activeIds.push(l.id);}
+    // Необработанные: ТОЛЬКО «Новая заявка» (Недозвон = уже касание менеджера, НЕ считаем)
+    if(l.status_id===STATUS_NEW){m.unprocessed++;if(m.unprocessedIds.length<50)m.unprocessedIds.push(l.id);}
+  }
+  const managers=Object.values(mgrMap).sort((a,b)=>b.leads-a.leads);
+
+  // ГЕО: дерево (город→сайт→источник) + плоская таблица связок geoFlat (для сорт/поиск и разреза
+  // по сайтам в Директе). Обе структуры строим за один проход. getSource/getSite считаем 1 раз.
+  const geoMap={}, flatMap={};
+  for(const l of leads){
+    const f=l.custom_fields_values||[];
+    const city=normCity(gf(f,['регион','город','city','region']));
+    const site=getSite(f);
+    const src=leadSource(l);
+    const cls=classifyLead(l);
+    const isB=cls==='bought', isL=cls==='lost';
+    if(!geoMap[city])geoMap[city]={leads:0,bought:0,sites:{}};
+    geoMap[city].leads++;if(isB)geoMap[city].bought++;
+    if(!geoMap[city].sites[site])geoMap[city].sites[site]={leads:0,bought:0,sources:{}};
+    geoMap[city].sites[site].leads++;if(isB)geoMap[city].sites[site].bought++;
+    if(!geoMap[city].sites[site].sources[src])geoMap[city].sites[site].sources[src]={leads:0,bought:0};
+    geoMap[city].sites[site].sources[src].leads++;if(isB)geoMap[city].sites[site].sources[src].bought++;
+    // плоская связка город|сайт|источник
+    const fk=city+'|||'+site+'|||'+src;
+    if(!flatMap[fk])flatMap[fk]={city,site,source:src,leads:0,bought:0,lost:0,leadIds:[],boughtIds:[]};
+    const fm=flatMap[fk];
+    fm.leads++; if(fm.leadIds.length<50)fm.leadIds.push(l.id);
+    if(isB){fm.bought++;if(fm.boughtIds.length<50)fm.boughtIds.push(l.id);}
+    if(isL)fm.lost++;
+  }
+  const geo=Object.entries(geoMap).sort((a,b)=>b[1].leads-a[1].leads).map(([city,cv])=>({
+    city,leads:cv.leads,bought:cv.bought,
+    sites:Object.entries(cv.sites).sort((a,b)=>b[1].leads-a[1].leads).map(([site,sv])=>({
+      site,leads:sv.leads,bought:sv.bought,
+      sources:Object.entries(sv.sources).sort((a,b)=>b[1].leads-a[1].leads).map(([s,v])=>({source:s,leads:v.leads,bought:v.bought}))
+    }))
+  }));
+  const geoFlat=Object.values(flatMap).map(r=>({
+    city:r.city, site:r.site, source:r.source, leads:r.leads, bought:r.bought, lost:r.lost,
+    conv:r.leads>0?Math.round(r.bought/r.leads*100):0, leadIds:r.leadIds, boughtIds:r.boughtIds
+  })).sort((a,b)=>b.leads-a.leads);
+
+  // Источники — с отказами, конверсией и drill-down ID (заявки/продажи/отказы кликабельны)
+  const srcMap={};
+  for(const l of leads){
+    const s=leadSource(l);
+    const cls=classifyLead(l);
+    if(!srcMap[s])srcMap[s]={leads:0,bought:0,lost:0,leadIds:[],boughtIds:[],lostIds:[]};
+    const sm=srcMap[s]; sm.leads++; if(sm.leadIds.length<50)sm.leadIds.push(l.id);
+    if(cls==='bought'){sm.bought++;if(sm.boughtIds.length<50)sm.boughtIds.push(l.id);}
+    if(cls==='lost'){sm.lost++;if(sm.lostIds.length<50)sm.lostIds.push(l.id);}
+  }
+  const sources=Object.entries(srcMap).map(([name,v])=>({
+    name, leads:v.leads, bought:v.bought, lost:v.lost,
+    conv:v.leads>0?Math.round(v.bought/v.leads*100):0,
+    leadIds:v.leadIds, boughtIds:v.boughtIds, lostIds:v.lostIds
+  })).sort((a,b)=>b.leads-a.leads);
+
+  // ГОРОД → КАНАЛ (источник+кампания): для ROI-разреза «город × канал» на вкладке Директ
+  const ccMap={};
+  for(const l of leads){
+    const f=l.custom_fields_values||[];
+    const city=normCity(gf(f,['регион','город','city','region']));
+    const so=getSource(f);
+    const src=leadSource(l), camp=so.campaign||'';
+    const isB=classifyLead(l)==='bought';
+    if(!ccMap[city])ccMap[city]={};
+    const k=src+'|||'+camp;
+    if(!ccMap[city][k])ccMap[city][k]={src,camp,leads:0,bought:0};
+    ccMap[city][k].leads++; if(isB)ccMap[city][k].bought++;
+  }
+  const cityChannels=Object.entries(ccMap).map(([city,chans])=>({
+    city, channels:Object.values(chans).sort((a,b)=>b.leads-a.leads)
+  })).sort((a,b)=>b.channels.reduce((s,c)=>s+c.leads,0)-a.channels.reduce((s,c)=>s+c.leads,0));
+
+  // Причины отказов (только сделки в статусе «Отказ») — [{reason,count,ids}]
+  // Считаем отказом всё, что классифицировано как 'lost' — включая целиком воронку «Условный отказ»
+  // (её сделки лежат в статусе «Клиент в отказе», а не в системном 143).
+  const refMap={};
+  for(const l of leads){
+    if(classifyLead(l)!=='lost')continue;
+    let reason=getRefusalReason(l.custom_fields_values||[])||'';
+    if(!reason&&l.pipeline_id===PIPE_COND_LOST)reason='Условный отказ';
+    if(!reason)reason='Не указана';
+    if(!refMap[reason])refMap[reason]={count:0,ids:[]};
+    refMap[reason].count++; if(refMap[reason].ids.length<50)refMap[reason].ids.push(l.id);
+  }
+  const refusalReasons=Object.entries(refMap).map(([reason,v])=>({reason,count:v.count,ids:v.ids})).sort((a,b)=>b.count-a.count);
+
+  // Яндекс из CRM
+  const ydMap={};
+  for(const l of leads){
+    const f=l.custom_fields_values||[];
+    if(leadSource(l)!=='Яндекс Директ')continue;
+    const term=gf(f,['utm_term','ключевое слово','keyword'])||'—';
+    const camp=gf(f,['utm_campaign','кампания'])||'—';
+    const isB=classifyLead(l)==='bought';
+    const key=term+'|||'+camp;
+    if(!ydMap[key])ydMap[key]={term,campaign:camp,leads:0,bought:0};
+    ydMap[key].leads++;if(isB)ydMap[key].bought++;
+  }
+  const yandex=Object.values(ydMap).sort((a,b)=>b.leads-a.leads).map(r=>({...r,conv:r.leads>0?Math.round(r.bought/r.leads*100):0}));
+
+  // Тренд
+  const tMap={};
+  for(const l of leads){
+    if(!l.created_at)continue;
+    const d=new Date(l.created_at*1000);
+    const key=d.getDate().toString().padStart(2,'0')+'.'+(d.getMonth()+1).toString().padStart(2,'0');
+    if(!tMap[key])tMap[key]={leads:0,bought:0,ts:l.created_at};
+    tMap[key].leads++;if(classifyLead(l)==='bought')tMap[key].bought++;
+  }
+  const trendAmo=Object.entries(tMap).sort((a,b)=>a[1].ts-b[1].ts).map(([date,v])=>({date,leads:v.leads,bought:v.bought}));
+
+  // Воронки по сайтам (под-вкладка CRM → Воронка): faamo.ru и alfa-collection.ru
+  const faamoFunnel=calcSiteFunnel(leads,'faamo.ru');
+  const alfaFunnel =calcSiteFunnel(leads,'alfa-collection.ru');
+
+  // Диагностика по воронкам: сколько сделок пришло из каждой. Позволяет убедиться, что технические
+  // воронки действительно отсечены (их id здесь отсутствуют) и увидеть объём новых категорий.
+  const byPipeline={};
+  for(const l of leads){
+    const nm=PIPE_NAMES[l.pipeline_id]||('id:'+l.pipeline_id);
+    byPipeline[nm]=(byPipeline[nm]||0)+1;
+  }
+
+  return{total,bought,lost,active,supply,delivery,supplyIds,deliveryIds,
+    visitedCount,visitedPct,funnel,faamoFunnel,alfaFunnel,
+    managers,geo,geoFlat,sources,yandex,cityChannels,refusalReasons,trendAmo,
+    byPipeline, excludedPipelines:PIPES_EXCLUDED.map(id=>PIPE_NAMES[id])};
+}
