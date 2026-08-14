@@ -104,7 +104,10 @@
           <div class="mc"><div class="mlb">В магазин</div><div class="mv" style="color:var(--teal)" id="m3">—</div><div class="ms" id="m3s"></div><div class="mdf" id="m3d"></div></div>
           <div class="mc"><div class="mlb">Отказы</div><div class="mv" style="color:var(--red)" id="m4">—</div><div class="ms" id="m4s"></div><div class="mdf" id="m4d"></div></div>
           <div class="mc"><div class="mlb">В работе</div><div class="mv" style="color:var(--blue)" id="m5">—</div><div class="ms">активных</div><div class="mdf" id="m5d"></div></div>
+          <div class="mc"><div class="mlb">Ждут поставку</div><div class="mv" style="color:var(--amber)" id="m6">—</div><div class="ms" id="m6s"></div><div class="mdf" id="m6d"></div></div>
         </div>
+        <!-- Сноска «В доставке»: показывается только когда delivery > 0 (обычно ~1 сделка в месяц) -->
+        <div id="delivery-note" style="display:none;font-size:11px;color:var(--tx3);margin:-8px 0 14px 2px"></div>
         <div class="card"><div class="ct">Динамика лидов</div><div class="chart-wrap" style="height:180px"><canvas id="tchart"></canvas></div></div>
       </div>
 

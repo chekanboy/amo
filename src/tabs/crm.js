@@ -15,6 +15,11 @@ export function renderCRM(d,p){
   document.getElementById('m3').textContent=(d.visitedPct||0)+'%'; document.getElementById('m3s').textContent=(d.visitedCount||0)+' чел.';
   document.getElementById('m4').textContent=(d.lost||0).toLocaleString('ru'); document.getElementById('m4s').textContent=(d.total>0?Math.round(d.lost/d.total*100):0)+'%';
   document.getElementById('m5').textContent=(d.active||0).toLocaleString('ru');
+  // «Ждут поставку» — отдельная категория воронки 10217954: не продажа, не отказ и НЕ «в работе»
+  // (клиент не подобрал товар и ждёт новую поставку). Цифра кликабельна → сделки в AmoCRM.
+  const supply=d.supply||0;
+  document.getElementById('m6').innerHTML=drillNum(supply,d.supplyIds,'var(--amber)');
+  document.getElementById('m6s').textContent=supply?'ожидают товар':'нет ожидающих';
   if(p){
     dif('m0d',d.total,p.total);                                  // Лиды — штуки
     dif('m1d',d.bought,p.bought);                                // Купили — штуки
@@ -22,13 +27,27 @@ export function renderCRM(d,p){
     dif('m3d',d.visitedPct,p.visitedPct||0,true);                // В магазин % — пункты
     dif('m4d',d.lost,p.lost,false,true);                         // Отказы — штуки, рост=плохо
     dif('m5d',d.active,p.active);                                // В работе — штуки
+    dif('m6d',supply,p.supply||0);                               // Ждут поставку — штуки
   }
+  renderDeliveryNote(d);
   renderFunnel(d.funnel||[]);
   renderManagers(d.managers||[]);
   renderGeo(d.geo||[]);
   renderDonuts(d.sources||[]);
   renderTrendCRM(d.trendAmo||[]);
   renderLost(d.funnel||[]);
+}
+
+// «В доставке» (воронка 10809230) — объём мизерный (~1 сделка в месяц), поэтому не карточка,
+// а сноска под метриками. Показываем только когда есть что показать. Продажей такая сделка
+// становится лишь после переезда в воронку «Продажи» со статусом «Купили».
+function renderDeliveryNote(d){
+  const el=document.getElementById('delivery-note'); if(!el)return;
+  const n=d.delivery||0;
+  if(!n){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  el.innerHTML=`📦 В доставке: ${drillNum(n,d.deliveryIds,'var(--amber)')} — заказ оформлен, товар в пути. `
+              +`В продажи попадёт после переезда в воронку «Продажи».`;
 }
 
 export function renderManagers(managers){

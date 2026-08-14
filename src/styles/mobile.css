@@ -1,4 +1,6 @@
 /* АДАПТИВ: планшет / телефон / узкий телефон */
+/* 7 карточек метрик в ряд помещаются только на широком экране — ниже перестраиваем */
+@media(max-width:1400px){.mrow{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:1100px){.mrow{grid-template-columns:repeat(3,1fr)}.mmet{grid-template-columns:repeat(3,1fr)}.g3{grid-template-columns:1fr 1fr}}
 @media(max-width:768px){
   /* Топбар: чёткая вертикальная колонка, НЕ прилипает, НЕ wrap */
