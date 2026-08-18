@@ -23,6 +23,12 @@ function missingSecrets() {
 // Не секреты — остаются в коде
 const AMO_DOMAIN    = 'igormakarenko877.amocrm.ru';
 
+// ID Google Таблицы для ежедневного отчёта (см. generateDailyReport ниже) — тоже в Script
+// Properties, не в коде: репозиторий публичный, а ID таблицы вместе с правами доступа к ней
+// давал бы больше, чем хотелось бы светить. НЕ входит в missingSecrets() — сам дашборд
+// (doGet) от него не зависит, нужен только для функций отчёта/триггера.
+const REPORT_SHEET_ID = PROPS_.getProperty('REPORT_SHEET_ID') || '';
+
 // ── ВОРОНКИ AMOCRM ──────────────────────────────────────────────────────────────
 // Раньше дашборд забирал сделки ТОЛЬКО из «Продажи» (filter[pipeline_id]=8708346) — остальные
 // 6 воронок выпадали из аналитики и занижали цифры. Теперь забираем все РЕАЛЬНЫЕ воронки, а
@@ -98,6 +104,23 @@ function doGet(e) {
         id: f.id, name: f.name, type: f.type,
         enums: (f.enums || []).map(e => ({id: e.id, value: e.value}))
       }));
+    } else if (tab === 'report_debug') {
+      // ВРЕМЕННО: даёт посмотреть, что посчитает generateDailyReport() за вчера, БЕЗ записи
+      // в Google Таблицу (computeDailyReport ничего не пишет) — удобно свериться до передачи
+      // заказчику. Не требует REPORT_SHEET_ID.
+      out.report = computeDailyReport();
+    } else if (tab === 'report_read_test') {
+      // Только чтение (как fields_debug) — сколько строк в каждом листе отчёта и что в последней.
+      // Полезно, чтобы свериться, что генератор пишет по одной строке на дату (идемпотентность).
+      if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID не задан');
+      const ss = SpreadsheetApp.openById(REPORT_SHEET_ID);
+      out.sheets = ['Общее','По городам','По сайтам','По источникам'].map(function(n){
+        const sh = ss.getSheetByName(n);
+        if (!sh) return {name:n, rows:0};
+        const last = sh.getLastRow();
+        return {name:n, rows: Math.max(0,last-1),
+          lastRow: last>1 ? sh.getRange(last,1,1,sh.getLastColumn()).getValues()[0] : null};
+      });
     } else if (tab === 'calls') {
       out.calltouch = buildCalltouchData(date1, date2);
     } else if (tab === 'metrika') {
@@ -959,4 +982,205 @@ function buildAmoData(fromTs, toTs) {
     managers,geo,geoFlat,sources,yandex,cityChannels,refusalReasons,refusalFlat,trendAmo,
     byPipeline, excludedPipelines:PIPES_EXCLUDED.map(id=>PIPE_NAMES[id]),
     debugAmoError: total===0 ? lastAmoError : undefined};
+}
+
+// ═══════════════════════════════════════════════════════════
+// ЕЖЕДНЕВНЫЙ ОТЧЁТ В GOOGLE ТАБЛИЦУ (для CEO)
+// ═══════════════════════════════════════════════════════════
+// Живой журнал: раз в день (триггер 23:30 МСК, см. installDailyTrigger) дописывает по одной
+// строке в каждый из 4 листов за ПРОШЕДШИЕ сутки. Источник данных — buildAmoData(), та же самая
+// проверенная логика, что и у дашборда; здесь ничего не пересчитывается заново.
+//
+// Настройка (см. README-APPS-SCRIPT.md):
+//   1. Создать отдельную Google Таблицу (НЕ ту, что уже используется под звонки МегаФона).
+//   2. ID таблицы — из URL (.../spreadsheets/d/ЭТОТ_ID/edit) → Script Properties → REPORT_SHEET_ID.
+//   3. Прогнать testDailyReport() вручную, свериться с числами.
+//   4. Прогнать installDailyTrigger() один раз — ставит ежедневный триггер на 23:30.
+//   5. ВАЖНО: 23:30 — это 23:30 часового пояса ПРОЕКТА Apps Script (Настройки проекта → Часовой
+//      пояс), не обязательно МСК! Если у проекта другой часовой пояс — либо смените его на
+//      Europe/Moscow, либо поменяйте час в installDailyTrigger() под нужное МСК-время.
+
+// Укрупнение источников (normSrc даёт более дробные категории) — порядок не важен, это плоский
+// маппинг конкретных значений. 'Другие' — всё, что не перечислено явно (Telegram/MAX/VK/
+// WhatsApp/2GIS/Рекомендации/Нейросети/Не указано/GeoAdv и т.д.). Дополнять по мере появления
+// новых категорий в normSrc, если заказчик попросит вынести что-то из «Другие» отдельно.
+const SOURCE_BUCKETS = ['Яндекс Директ','Яндекс (органика+Карты)','Google','Прямой заход',
+  'Постоянный клиент','Холодный обзвон','Запись YClients','Другие'];
+function mapSourceBucket(name) {
+  if (name==='Яндекс Директ') return 'Яндекс Директ';
+  if (name==='Яндекс (органика)'||name==='Яндекс Карты') return 'Яндекс (органика+Карты)';
+  if (name==='Google Ads'||name==='Google (органика)'||name==='Google Карты') return 'Google';
+  if (name==='Прямой заход') return 'Прямой заход';
+  if (name==='Постоянный клиент') return 'Постоянный клиент';
+  if (name==='Холодный обзвон') return 'Холодный обзвон';
+  if (name==='Запись YClients') return 'Запись YClients';
+  return 'Другие';
+}
+
+// Считает все 4 среза за вчера (00:00–23:59 МСК). Ничего не пишет — можно дёргать сколько
+// угодно раз для проверки (в т.ч. через ?tab=report_debug в doGet, без REPORT_SHEET_ID).
+function computeDailyReport() {
+  const period = resolvePeriod({period:'yesterday'});
+  const raw = buildAmoData(period.fromTs, period.toTs);
+  const dateLabel = Utilities.formatDate(new Date(period.fromTs*1000), 'Europe/Moscow', 'dd.MM.yyyy');
+
+  // ОБЩЕЕ: «Спам» = ВЕСЬ мусор (Спам/реклама + Тест + Ошиблись номером — isJunk=true одним числом)
+  const refusals = raw.refusalReasons || [];
+  const realRefusals = refusals.filter(r=>!r.isJunk).reduce((s,r)=>s+r.count,0);
+  const junkRefusals = refusals.filter(r=>r.isJunk).reduce((s,r)=>s+r.count,0);
+  const conv = raw.total>0 ? Math.round(raw.bought/raw.total*10000)/100 : 0; // % с 2 знаками
+  const overall = {leads:raw.total, bought:raw.bought, realRefusals, junkRefusals, conv};
+
+  // ПО ГОРОДАМ: заявки/продажи из geo[], отказы/спам агрегируем из refusalFlat по city.
+  // Только Москва и СПб (как в ТЗ) — прочие города («Не указано», региональные) в отчёт не идут.
+  const CITIES = ['Москва','Санкт-Петербург'];
+  const geoByCity = {}; (raw.geo||[]).forEach(g=>{ geoByCity[g.city]=g; });
+  const cityRefusal = {};
+  (raw.refusalFlat||[]).forEach(r=>{
+    const c = cityRefusal[r.city] || (cityRefusal[r.city]={real:0,junk:0});
+    if (r.isJunk) c.junk+=r.count; else c.real+=r.count;
+  });
+  const cities = {};
+  CITIES.forEach(c=>{
+    const g = geoByCity[c] || {leads:0,bought:0};
+    const rf = cityRefusal[c] || {real:0,junk:0};
+    cities[c] = {leads:g.leads||0, bought:g.bought||0, realRefusals:rf.real, junkRefusals:rf.junk};
+  });
+
+  // ПО САЙТАМ: заявки/продажи агрегируем из geoFlat по site (несколько city → один site),
+  // отказы/спам — из refusalFlat по site. Только faamo.ru и alfa-collection.ru (как в ТЗ).
+  const SITES = ['faamo.ru','alfa-collection.ru'];
+  const siteLeads = {};
+  (raw.geoFlat||[]).forEach(r=>{
+    const s = siteLeads[r.site] || (siteLeads[r.site]={leads:0,bought:0});
+    s.leads += r.leads; s.bought += r.bought;
+  });
+  const siteRefusal = {};
+  (raw.refusalFlat||[]).forEach(r=>{
+    const s = siteRefusal[r.site] || (siteRefusal[r.site]={real:0,junk:0});
+    if (r.isJunk) s.junk+=r.count; else s.real+=r.count;
+  });
+  const sites = {};
+  SITES.forEach(s=>{
+    const l = siteLeads[s] || {leads:0,bought:0};
+    const rf = siteRefusal[s] || {real:0,junk:0};
+    sites[s] = {leads:l.leads, bought:l.bought, realRefusals:rf.real, junkRefusals:rf.junk};
+  });
+
+  // ПО ИСТОЧНИКАМ: укрупняем sources[] (там уже leads/bought по normSrc-категориям) через
+  // mapSourceBucket. Отказы/спам по источникам в ТЗ не запрошены — только заявки+продажи.
+  const sources = {};
+  SOURCE_BUCKETS.forEach(b=>{ sources[b]={leads:0,bought:0}; });
+  (raw.sources||[]).forEach(s=>{
+    const bucket = mapSourceBucket(s.name);
+    sources[bucket].leads += s.leads;
+    sources[bucket].bought += s.bought;
+  });
+
+  return {date:dateLabel, overall, cities, sites, sources};
+}
+
+// БЫЛО: сравнение через Utilities.formatDate(cellVal,'Europe/Moscow',...) — сломалось, потому что
+// Google Таблицы сами превращают текст "17.08.2026" в дату по ЧАСОВОМУ ПОЯСУ ТАБЛИЦЫ (у заказчика
+// это оказался Asia/Bangkok, не Europe/Moscow), и обратное форматирование в MSK съезжало на день.
+// СТАЛО: сравниваем в часовом поясе САМОЙ ТАБЛИЦЫ (ss.getSpreadsheetTimeZone()) — том же самом,
+// по которому Таблицы её и распознали при автоконвертации, поэтому день не съезжает независимо
+// от того, в каком часовом поясе живёт сама таблица. setNumberFormat('@') в upsertRow_ ниже
+// выставлен как попытка вообще не дать Таблицам конвертировать текст в дату — на практике Таблицы
+// иногда всё равно конвертируют при записи через API, поэтому нельзя полагаться только на него;
+// именно поэтому сравнение по часовому поясу таблицы — основная защита, а не текстовый формат.
+function sameDate_(ss, cellVal, dateLabel) {
+  if (cellVal instanceof Date) return Utilities.formatDate(cellVal, ss.getSpreadsheetTimeZone(), 'dd.MM.yyyy') === dateLabel;
+  return String(cellVal||'').trim() === dateLabel;
+}
+
+// Идемпотентная запись строки: ищет строку с такой же датой в столбце A — если нашла,
+// перезаписывает её значения; если нет — дописывает новую. headers пишутся один раз (на
+// новый/пустой лист) и не трогаются при повторных запусках. Столбец A принудительно текстовый —
+// см. пояснение в sameDate_ выше.
+function upsertRow_(ss, sheetName, headers, dateLabel, rowValues) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange('A:A').setNumberFormat('@');
+  }
+
+  const fullRow = [dateLabel].concat(rowValues);
+  const lastRow = sheet.getLastRow();
+  let targetRow = -1;
+  if (lastRow > 1) {
+    const dates = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < dates.length; i++) {
+      if (sameDate_(ss, dates[i][0], dateLabel)) { targetRow = i + 2; break; }
+    }
+  }
+  if (targetRow > 0) sheet.getRange(targetRow, 1, 1, fullRow.length).setValues([fullRow]);
+  else sheet.appendRow(fullRow);
+}
+
+// Пишет посчитанный computeDailyReport() во все 4 листа отчётной таблицы.
+function writeDailyReport_(data) {
+  if (!REPORT_SHEET_ID) throw new Error('Не задано свойство скрипта REPORT_SHEET_ID — укажите ' +
+    'ID Google Таблицы для отчёта (Настройки проекта → Свойства скрипта).');
+  const ss = SpreadsheetApp.openById(REPORT_SHEET_ID);
+
+  upsertRow_(ss, 'Общее',
+    ['Дата','Заявки','Продажи','Отказы (реальные)','Спам (весь мусор)','Конверсия %'],
+    data.date,
+    [data.overall.leads, data.overall.bought, data.overall.realRefusals, data.overall.junkRefusals, data.overall.conv]);
+
+  const cityDefs = [['Москва','МСК'], ['Санкт-Петербург','СПб']];
+  const cityHeaders = ['Дата']; const cityRow = [];
+  cityDefs.forEach(([key,short])=>{
+    cityHeaders.push(short+' Заявки', short+' Продажи', short+' Отказы', short+' Спам');
+    const d = data.cities[key];
+    cityRow.push(d.leads, d.bought, d.realRefusals, d.junkRefusals);
+  });
+  upsertRow_(ss, 'По городам', cityHeaders, data.date, cityRow);
+
+  const siteDefs = [['faamo.ru','faamo'], ['alfa-collection.ru','alfa']];
+  const siteHeaders = ['Дата']; const siteRow = [];
+  siteDefs.forEach(([key,short])=>{
+    siteHeaders.push(short+' Заявки', short+' Продажи', short+' Отказы', short+' Спам');
+    const d = data.sites[key];
+    siteRow.push(d.leads, d.bought, d.realRefusals, d.junkRefusals);
+  });
+  upsertRow_(ss, 'По сайтам', siteHeaders, data.date, siteRow);
+
+  const srcHeaders = ['Дата']; const srcRow = [];
+  SOURCE_BUCKETS.forEach(b=>{
+    srcHeaders.push(b+' Заявки', b+' Продажи');
+    const d = data.sources[b];
+    srcRow.push(d.leads, d.bought);
+  });
+  upsertRow_(ss, 'По источникам', srcHeaders, data.date, srcRow);
+}
+
+// Точка входа для триггера — считает вчера и пишет в таблицу. Идемпотентна: повторный вызов
+// в тот же день перезаписывает те же 4 строки, а не плодит новые (см. upsertRow_/sameDate_).
+function generateDailyReport() {
+  const data = computeDailyReport();
+  writeDailyReport_(data);
+  return data;
+}
+
+// Ручной тестовый прогон ДО включения автотриггера — фактически пишет в таблицу (тот же путь,
+// что и триггер), просто вызывается руками из редактора Apps Script. Результат — в Логах
+// выполнения (Вид → Журналы выполнения) и в возвращаемом значении.
+function testDailyReport() {
+  const data = generateDailyReport();
+  Logger.log(JSON.stringify(data, null, 2));
+  return data;
+}
+
+// Запустить ОДИН РАЗ вручную из редактора — ставит ежедневный триггер на 23:30 часового пояса
+// ПРОЕКТА (см. предупреждение в шапке блока). Удаляет прежние триггеры generateDailyReport
+// перед установкой новой, чтобы повторный запуск этой функции не создал дубль триггера.
+function installDailyTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t=>{
+    if (t.getHandlerFunction()==='generateDailyReport') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('generateDailyReport').timeBased().atHour(23).nearMinute(30).everyDays(1).create();
 }
