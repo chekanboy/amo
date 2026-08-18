@@ -1,11 +1,12 @@
 // Вкладка «Отказы»: гибридная классификация причин (см. classifyRefusal в .gs — ШАГ 1 поле
 // «Причина», ШАГ 2 текст «Комментарий отказа»), счётчики реальные/мусорные, донат по реальным
-// причинам, разрезы Общая/Города/Сайты/Источники, drill-down с текстом комментария.
+// причинам, разрезы Общая / Город→Сайт→Источник, drill-down с текстом комментария.
 //
-// Города/Сайты/Источники — дерево по образцу geo.js (Город→Сайт→Источник): группа раскрывается
-// кликом, внутри — ВСЕ причины отказов этой группы (не только топ-1), каждая кликабельна отдельно.
-// Для этого используется refusalFlat (город|сайт|источник|причина, приходит из .gs) — иначе
-// drill-down показывал бы сделки причины СО ВСЕХ городов сразу, а не только этой группы.
+// Второй разрез — дерево ТОЧНО по образцу geo.js (Город→Сайт→Источник, тот же паттерн, что
+// в CRM/Города): можно точечно посмотреть «Москва / alfa-collection.ru / Яндекс Директ» —
+// сколько там отказов и какие именно, а не смотреть три раздельных списка по каждому измерению.
+// Строится из refusalFlat (город|сайт|источник|причина, приходит из .gs) — листовая строка
+// (источник) объединяет все причины отказа внутри этой связки город×сайт×источник.
 import { drillRefusal } from '../components/drilldown.js';
 import { AC } from '../utils/constants.js';
 
@@ -62,10 +63,7 @@ export function switchRefusalSeg(seg){ rf.seg = seg; renderTable(); }
 function renderTable(){
   const el = document.getElementById('rf-table'); if(!el) return;
   document.querySelectorAll('#rf-stabs .stab').forEach(b=>b.classList.toggle('on', b.dataset.seg===rf.seg));
-  el.innerHTML = rf.seg==='city'   ? groupTree(rf.flat,'city','Город')
-               : rf.seg==='site'   ? groupTree(rf.flat,'site','Сайт')
-               : rf.seg==='source' ? groupTree(rf.flat,'source','Источник')
-               : reasonTable(rf.reasons);
+  el.innerHTML = rf.seg==='tree' ? cityTree(rf.flat) : reasonTable(rf.reasons);
 }
 
 // Общая: по категориям причин, с drill-down (items несёт текст комментария)
@@ -96,52 +94,69 @@ function reasonTable(reasons){
   <div style="font-size:10px;color:var(--tx3);margin-top:8px">💡 Цифра «Всего» кликабельна — попап со сделками и текстом комментария</div>`;
 }
 
-// Города/Сайты/Источники: дерево — группа (город/сайт/источник) раскрывается кликом, внутри
-// ВСЕ причины этой группы с drill-down. dimKey — поле refusalFlat ('city'/'site'/'source').
-function groupTree(flat, dimKey, label){
-  if(!flat.length) return '<div class="nd">Нет данных</div>';
-  const groups = {};
+// Дерево Город → Сайт → Источник (тот же паттерн, что и в CRM/Города — geo.js): можно точечно
+// посмотреть «Москва / alfa-collection.ru / Яндекс Директ» — сколько там отказов и каких именно.
+// Листовая строка (источник) кликабельна — drill-down: попап со сделками ИМЕННО этой связки
+// город×сайт×источник (объединяет все причины отказа внутри неё) и текстом комментария.
+function buildCityTree(flat){
+  const cities = {};
   for(const r of flat){
-    const g = r[dimKey] || 'Не указано';
-    if(!groups[g]) groups[g] = {name:g, total:0, real:0, junk:0, reasons:{}};
-    const grp = groups[g];
-    grp.total += r.count;
-    if(r.isJunk) grp.junk += r.count; else grp.real += r.count;
-    if(!grp.reasons[r.reason]) grp.reasons[r.reason] = {reason:r.reason, isJunk:r.isJunk, count:0, items:[]};
-    const rr = grp.reasons[r.reason];
-    rr.count += r.count;
-    rr.items = rr.items.concat(r.items||[]).slice(0,50);
+    const city=r.city||'Не указано', site=r.site||'Не указано', source=r.source||'Не указано';
+    if(!cities[city]) cities[city]={name:city,total:0,real:0,junk:0,sites:{}};
+    const c=cities[city]; c.total+=r.count; if(r.isJunk)c.junk+=r.count; else c.real+=r.count;
+    if(!c.sites[site]) c.sites[site]={name:site,total:0,real:0,junk:0,sources:{}};
+    const s=c.sites[site]; s.total+=r.count; if(r.isJunk)s.junk+=r.count; else s.real+=r.count;
+    if(!s.sources[source]) s.sources[source]={name:source,total:0,real:0,junk:0,items:[]};
+    const src=s.sources[source]; src.total+=r.count; if(r.isJunk)src.junk+=r.count; else src.real+=r.count;
+    src.items = src.items.concat(r.items||[]).slice(0,50);
   }
-  const rows = Object.values(groups).sort((a,b)=>b.total-a.total);
+  return Object.values(cities).sort((a,b)=>b.total-a.total).map(c=>({
+    ...c, sitesArr: Object.values(c.sites).sort((a,b)=>b.total-a.total).map(s=>({
+      ...s, sourcesArr: Object.values(s.sources).sort((a,b)=>b.total-a.total)
+    }))
+  }));
+}
 
-  const html = rows.map(grp=>{
-    const reasons = Object.values(grp.reasons).sort((a,b)=>b.count-a.count);
-    const maxCount = reasons[0]?.count || 1;
-    const reasonRows = reasons.map(rr=>{
-      const badge = rr.isJunk ? '<span style="font-size:9px;background:var(--tx3);color:var(--bg);padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:600">МУСОР</span>' : '';
-      const w = Math.round(rr.count/maxCount*100);
-      const color = rr.isJunk ? 'var(--tx3)' : 'var(--red)';
-      return `<div class="src-row">
-        <div style="flex:1;font-size:12px;color:var(--tx2)">${rr.reason}${badge}</div>
-        <div style="width:70px;background:var(--bg3);border-radius:3px;height:3px;flex-shrink:0"><div style="width:${w}%;height:3px;border-radius:3px;background:${color}"></div></div>
-        <div style="font-size:12px;font-weight:600;width:34px;text-align:right;color:${color}">${drillRefusal(rr.count, rr.items, color, rr.reason)}</div>
-      </div>`;
+function cityTree(flat){
+  if(!flat.length) return '<div class="nd">Нет данных</div>';
+  const tree = buildCityTree(flat);
+  const cityIcon = c => c==='Москва'?'🏙️':c==='Санкт-Петербург'?'🌊':'📍';
+
+  const html = tree.map(city=>{
+    const sitesHtml = city.sitesArr.map(site=>{
+      const maxSrc = site.sourcesArr[0]?.total || 1;
+      const srcRows = site.sourcesArr.map(src=>{
+        const w = Math.round(src.total/maxSrc*100);
+        const label = `${city.name} · ${site.name} · ${src.name}`;
+        return `<div class="src-row">
+          <div style="flex:1;font-size:12px;color:var(--tx2)">${src.name}</div>
+          <div style="width:55px;background:var(--bg3);border-radius:3px;height:3px;flex-shrink:0"><div style="width:${w}%;height:3px;border-radius:3px;background:var(--red)"></div></div>
+          <div style="font-size:12px;font-weight:600;width:32px;text-align:right">${drillRefusal(src.total, src.items, 'var(--red)', label)}</div>
+          <div style="font-size:11px;width:90px;text-align:right"><span style="color:var(--red)">${src.real}</span> реал / <span style="color:var(--tx3)">${src.junk}</span> мус</div>
+        </div>`;
+      }).join('');
+      return `<div class="site-block"><div class="site-hdr" onclick="toggleEl(this)">
+        <div class="site-name">${site.name}</div>
+        <div style="display:flex;gap:10px;font-size:12px"><span>${site.total}</span><span style="color:var(--red)">${site.real}</span><span style="color:var(--tx3)">${site.junk}</span></div>
+        <span style="font-size:11px;color:var(--tx3);transition:transform .2s">›</span>
+      </div><div class="site-body">
+        <div style="display:flex;padding:4px 6px;font-size:10px;color:var(--tx3);gap:8px"><div style="flex:1">Источник</div><div style="width:55px"></div><div style="width:32px;text-align:right">Всего</div><div style="width:90px;text-align:right">Реал/Мус</div></div>
+        ${srcRows}
+      </div></div>`;
     }).join('');
-    return `<div class="city-block">
-      <div class="city-hdr" onclick="toggleCity(this)">
-        <div class="city-name">${grp.name}</div>
-        <div class="city-stats">
-          <div class="cst"><div class="cst-v">${grp.total}</div><div class="cst-l">Всего</div></div>
-          <div class="cst"><div class="cst-v" style="color:var(--red)">${grp.real}</div><div class="cst-l">Реальных</div></div>
-          <div class="cst"><div class="cst-v" style="color:var(--tx3)">${grp.junk}</div><div class="cst-l">Мусорных</div></div>
-        </div>
-        <span class="chv">›</span>
+    return `<div class="city-block"><div class="city-hdr" onclick="toggleCity(this)">
+      <div style="font-size:16px">${cityIcon(city.name)}</div>
+      <div class="city-name">${city.name}</div>
+      <div class="city-stats">
+        <div class="cst"><div class="cst-v">${city.total}</div><div class="cst-l">Всего</div></div>
+        <div class="cst"><div class="cst-v" style="color:var(--red)">${city.real}</div><div class="cst-l">Реальных</div></div>
+        <div class="cst"><div class="cst-v" style="color:var(--tx3)">${city.junk}</div><div class="cst-l">Мусорных</div></div>
       </div>
-      <div class="city-body">${reasonRows}</div>
-    </div>`;
+      <span class="chv">›</span>
+    </div><div class="city-body">${sitesHtml}</div></div>`;
   }).join('');
 
-  return `<div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Клик по ${label.toLowerCase()}у — раскрыть все причины · цифра кликабельна — сделки в AmoCRM</div>${html}`;
+  return `<div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Клик по городу/сайту — раскрыть · цифра у источника кликабельна — сделки в AmoCRM</div>${html}`;
 }
 
 function topEntries(obj, n){
