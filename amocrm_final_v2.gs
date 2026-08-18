@@ -879,7 +879,10 @@ function buildAmoData(fromTs, toTs) {
   // статусе «Клиент в отказе», а не в системном 143); там «Причина»/«Комментарий» обычно не
   // заполнены, поэтому такие сделки маркируем явно, не гоняя пустой текст через ШАГ 2.
   // byCity/bySite — для разрезов «Причины отказов» по городам/сайтам на новой вкладке.
-  const refMap={};
+  // refusalFlat — связка город|сайт|источник|причина (по образцу geoFlat выше), нужна для
+  // дерева на вкладке «Отказы» (разрезы Города/Сайты/Источники, каждая причина внутри группы
+  // кликабельна отдельно — иначе drill-down показывал бы сделки этой причины СО ВСЕХ городов).
+  const refMap={}, refFlatMap={};
   for(const l of leads){
     if(classifyLead(l)!=='lost')continue;
     const f=l.custom_fields_values||[];
@@ -891,17 +894,28 @@ function buildAmoData(fromTs, toTs) {
       : classifyRefusal(prichinaId, prichinaText, comment);
     const city=normCity(gf(f,['регион','город','city','region']));
     const site=getSite(f);
+    const src=leadSource(l);
     const key=cls.category;
-    if(!refMap[key])refMap[key]={reason:key,isJunk:cls.isJunk,count:0,byCity:{},bySite:{},ids:[],items:[]};
+    const item={id:l.id, comment:(comment||'').slice(0,200)};
+
+    if(!refMap[key])refMap[key]={reason:key,isJunk:cls.isJunk,count:0,byCity:{},bySite:{},bySource:{},ids:[],items:[]};
     const rm=refMap[key];
     rm.count++;
     rm.byCity[city]=(rm.byCity[city]||0)+1;
     rm.bySite[site]=(rm.bySite[site]||0)+1;
-    // items — для попапа drill-down с текстом комментария (вкладка «Отказы»); ids оставлены
-    // отдельно для обратной совместимости со старым блоком «Причины отказов» на CRM/Воронка.
-    if(rm.ids.length<50){rm.ids.push(l.id); rm.items.push({id:l.id, comment:(comment||'').slice(0,200)});}
+    rm.bySource[src]=(rm.bySource[src]||0)+1;
+    // items — для попапа drill-down с текстом комментария; ids оставлены отдельно для обратной
+    // совместимости со старым блоком «Причины отказов» на CRM/Воронка.
+    if(rm.ids.length<50){rm.ids.push(l.id); rm.items.push(item);}
+
+    const fk=city+'|||'+site+'|||'+src+'|||'+key;
+    if(!refFlatMap[fk])refFlatMap[fk]={city,site,source:src,reason:key,isJunk:cls.isJunk,count:0,ids:[],items:[]};
+    const fm=refFlatMap[fk];
+    fm.count++;
+    if(fm.ids.length<50){fm.ids.push(l.id); fm.items.push(item);}
   }
   const refusalReasons=Object.values(refMap).sort((a,b)=>b.count-a.count);
+  const refusalFlat=Object.values(refFlatMap);
 
   // Яндекс из CRM
   const ydMap={};
@@ -942,7 +956,7 @@ function buildAmoData(fromTs, toTs) {
 
   return{total,bought,lost,active,supply,delivery,supplyIds,deliveryIds,
     visitedCount,visitedPct,funnel,faamoFunnel,alfaFunnel,
-    managers,geo,geoFlat,sources,yandex,cityChannels,refusalReasons,trendAmo,
+    managers,geo,geoFlat,sources,yandex,cityChannels,refusalReasons,refusalFlat,trendAmo,
     byPipeline, excludedPipelines:PIPES_EXCLUDED.map(id=>PIPE_NAMES[id]),
     debugAmoError: total===0 ? lastAmoError : undefined};
 }
