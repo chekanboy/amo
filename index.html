@@ -53,6 +53,7 @@
     <button class="ntab" data-pg="calls">Звонки</button>
     <button class="ntab" data-pg="metrika">Метрика</button>
     <button class="ntab" data-pg="direct">Директ</button>
+    <button class="ntab" data-pg="refusals">Отказы</button>
   </div>
 
   <div class="ml">
@@ -366,6 +367,32 @@
             <th style="width:18%;text-align:right">Конв.</th>
           </tr></thead><tbody id="kw-crm"></tbody></table>
         </div>
+      </div>
+    </div>
+
+    <!-- ОТКАЗЫ -->
+    <div class="page" id="page-refusals">
+      <div class="mrow mrow-3" style="margin-bottom:14px">
+        <div class="mc"><div class="mlb">Реальные отказы</div><div class="mv" style="color:var(--red)" id="rf-real">—</div><div class="ms" id="rf-real-s"></div></div>
+        <div class="mc"><div class="mlb">Мусорные лиды</div><div class="mv" style="color:var(--tx3)" id="rf-junk">—</div><div class="ms" id="rf-junk-s"></div></div>
+        <div class="mc"><div class="mlb">Всего отказов</div><div class="mv" id="rf-total">—</div><div class="ms">за период</div></div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="ct">Структура реальных причин</div>
+        <div class="donut-wrap" style="justify-content:center">
+          <div class="donut-block"><canvas class="donut-canvas" id="rf-donut"></canvas><div id="rf-donut-leg"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <div class="ct" style="margin-bottom:0">Причины отказов</div>
+          <div class="stabs" id="rf-stabs" style="margin-bottom:0">
+            <button class="stab on" data-seg="all" onclick="switchRefusalSeg('all')">Общая</button>
+            <button class="stab" data-seg="city" onclick="switchRefusalSeg('city')">Города</button>
+            <button class="stab" data-seg="site" onclick="switchRefusalSeg('site')">Сайты</button>
+          </div>
+        </div>
+        <div id="rf-table"></div>
       </div>
     </div>
 

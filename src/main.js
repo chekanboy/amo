@@ -9,10 +9,11 @@ import { checkPw, initGate } from './core/gate.js';
 import { applyTheme, toggleTheme } from './core/theme.js';
 import { load, loadTab } from './core/api.js';
 import { connect, resetSetup, applyRange, initNav } from './core/nav.js';
-import { showLeadsPopup } from './components/drilldown.js';
+import { showLeadsPopup, showRefusalPopupByIndex } from './components/drilldown.js';
 import { switchGeoView, renderGeoFlat, setGeoSort, toggleCity, toggleEl } from './components/geo.js';
 import { switchSrcTab } from './tabs/metrika.js';
 import { switchRoiSeg } from './tabs/direct.js';
+import { switchRefusalSeg } from './tabs/refusals.js';
 
 // Разметка использует inline-обработчики (onclick/oninput/onkeydown) — эти функции
 // должны быть доступны в глобальной области. При сборке в модуль они по умолчанию
@@ -26,6 +27,7 @@ Object.assign(window, {
   resetSetup,
   applyRange,
   showLeadsPopup,
+  showRefusalPopupByIndex,
   switchGeoView,
   renderGeoFlat,
   setGeoSort,
@@ -33,6 +35,7 @@ Object.assign(window, {
   toggleEl,
   switchSrcTab,
   switchRoiSeg,
+  switchRefusalSeg,
 });
 
 // ── INIT ──

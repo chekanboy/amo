@@ -88,7 +88,17 @@ function doGet(e) {
     const tab = p.tab || 'crm';
     let out = {};
 
-    if (tab === 'calls') {
+    if (tab === 'fields_debug') {
+      // ВРЕМЕННО (2026-08-18): узнать полный enum поля «Причина» (весь список опций выпадающего
+      // списка в AmoCRM, а не только то, что встретилось в текущей выборке сделок) — нужно один
+      // раз для калибровки classifyRefusal(). Убрать после того, как маппинг построен.
+      const fd = amoFetch('/api/v4/leads/custom_fields?limit=250');
+      const all = (fd && fd._embedded && fd._embedded.custom_fields) || [];
+      out.fields = all.filter(f => /причин|отказ/i.test(f.name || '')).map(f => ({
+        id: f.id, name: f.name, type: f.type,
+        enums: (f.enums || []).map(e => ({id: e.id, value: e.value}))
+      }));
+    } else if (tab === 'calls') {
       out.calltouch = buildCalltouchData(date1, date2);
     } else if (tab === 'metrika') {
       out.metrika = buildMetrikaData(date1, date2);
@@ -376,11 +386,18 @@ function buildMetrikaData(date1, date2) {
 // ═══════════════════════════════════════════════════════════
 // AMO CRM
 // ═══════════════════════════════════════════════════════════
+// ВРЕМЕННАЯ ДИАГНОСТИКА (2026-08-18): amoFetch раньше молча глотал ошибки AmoCRM (401/400/…),
+// из-за чего пустой ответ AmoCRM выглядел как «нет сделок за период» вместо явной ошибки.
+// lastAmoError запоминает код и тело последнего неудачного запроса — buildAmoData прикладывает
+// его к ответу, только если leads в итоге не нашлось (total===0), чтобы не засорять обычный ответ.
+let lastAmoError = null;
 function amoFetch(path) {
   try {
     const r=UrlFetchApp.fetch('https://'+AMO_DOMAIN+path,{headers:{'Authorization':'Bearer '+AMO_TOKEN},muteHttpExceptions:true});
-    return r.getResponseCode()===200?JSON.parse(r.getContentText()):null;
-  } catch(e){return null;}
+    const code=r.getResponseCode();
+    if(code!==200){ lastAmoError={path, code, body:r.getContentText().slice(0,500)}; return null; }
+    return JSON.parse(r.getContentText());
+  } catch(e){ lastAmoError={path, code:'exception', body:e.message}; return null; }
 }
 
 // Собирает признаки источника сделки за ОДИН проход по полям (раньше отдавал только строку):
@@ -396,7 +413,7 @@ function amoFetch(path) {
 // он проставлен в Сводный у 174 сделок и маскирует реальный источник (у 108 он лежит в следующем
 // поле: google / yandex_faamo_msk / (direct) …). Поэтому если поле = «запись» — пропускаем его.
 function getSource(fields) {
-  if (!fields) return {raw:'', medium:'', srcName:'', campaign:''};
+  if (!fields) return {raw:'', medium:'', srcName:'', campaign:'', svod:''};
   let svod='', utmOther='', ct='', medium='', srcName='', campaign='';
   for (const f of fields) {
     const fn=(f.field_name||'').toLowerCase();
@@ -416,10 +433,10 @@ function getSource(fields) {
   const isZap = v => v.toLowerCase().includes('запись');                    // «Запись на время» — не источник
   let utm='';
   for (const cand of [svod, utmOther]) { if (cand && !isZap(cand)) { utm=cand; break; } }
-  return {raw: utm||ct||'', medium, srcName, campaign};
+  return {raw: utm||ct||'', medium, srcName, campaign, svod};
 }
 
-// Классифицирует источник сделки. Вход — объект из getSource() {raw, medium, srcName, campaign}.
+// Классифицирует источник сделки. Вход — объект из getSource() {raw, medium, srcName, campaign, svod}.
 //
 // ПРИНЦИП 1 — тип трафика, а не «в строке встретилось yandex». Прежняя версия валила в «Яндекс
 // Директ» ВСЁ яндексовое (реклама + органика + карты + ручной ввод) → 475/173 на июне вместо
@@ -438,6 +455,7 @@ function normSrc(src) {
   src = src || {};
   const raw    = src.raw || '';
   const medium = (src.medium || '').toLowerCase();
+  const svod   = (src.svod || '').toLowerCase().trim();
   const s   = raw.toLowerCase().trim();
   const hay = (raw + ' ' + (src.medium || '')).toLowerCase();   // источник+канал: признак «карт» бывает и в utm_medium
 
@@ -450,6 +468,13 @@ function normSrc(src) {
   if (hay.includes('geoadv')) return 'GeoAdv';
   if (hay.includes('карт')||hay.includes('/maps'))
     return (hay.includes('google')||hay.includes('гугл')) ? 'Google Карты' : 'Яндекс Карты';
+
+  // ── ЯВНАЯ МЕТКА В «(UTM_SOURCE) СВОДНЫЙ» ─────────────────────────────────────
+  // Значение 'Direct' или 'Яндекс Директ' в самом надёжном поле (Сводный) — это уже готовая
+  // классификация от интеграции/оператора, доверяем ей раньше общей эвристики по utm_medium=cpc
+  // (у части таких сделок medium не проставлен, и без этой проверки они уезжали бы в «Прямой
+  // заход» через правило-склейку ниже вместо «Яндекс Директ»).
+  if (svod.includes('direct')||svod.includes('директ')) return 'Яндекс Директ';
 
   // ── ЯНДЕКС по типу трафика ───────────────────────────────────────────────────
   const isYandex = s.includes('yandex')||s.includes('яндекс')||
@@ -515,21 +540,117 @@ function getSite(fields) {
   return 'Не указано';
 }
 
-function gf(fields, names) {
-  if (!fields) return '';
+function gfRaw(fields, names) {
+  if (!fields) return null;
   for (const f of fields) {
     const fn=(f.field_name||'').toLowerCase();
-    for (const n of names) if (fn.includes(n.toLowerCase())) return f.values&&f.values[0]?String(f.values[0].value||'').trim():'';
+    for (const n of names) if (fn.includes(n.toLowerCase())) return (f.values && f.values[0]) || null;
   }
-  return '';
+  return null;
+}
+function gf(fields, names) {
+  const v = gfRaw(fields, names);
+  return v ? String(v.value||'').trim() : '';
+}
+// enum_id варианта выпадающего списка (для select-полей типа «Причина») — устойчив к любым
+// расхождениям в ТЕКСТЕ значения (регистр, опечатка, лишний пробел — в т.ч. и в самой опции
+// AmoCRM). Раньше «Причина» сравнивалась по тексту через PRICHINA_MAP, и из-за этого «Тест»/
+// «Передумал» не склеивались с одноимёнными сделками — см. историю. enum_id таких проблем не даёт.
+function gfEnumId(fields, names) {
+  const v = gfRaw(fields, names);
+  return (v && v.enum_id != null) ? v.enum_id : null;
 }
 
-// Причина отказа: основное поле «Причина» (заполнено у 727/730 отказов на реале), иначе
-// «Комментарий отказа». Пустая Причина → падаем на комментарий (gf вернёт '' у пустого поля).
-function getRefusalReason(fields) {
-  let reason = gf(fields, ['причина']);
-  if (!reason) reason = gf(fields, ['комментарий отказа']);
-  return (reason || '').trim();
+// ═══════════════════════════════════════════════════════════
+// ПРИЧИНЫ ОТКАЗОВ — гибридная классификация
+// ═══════════════════════════════════════════════════════════
+// ШАГ 1 — поле «Причина» (выпадающий список, id 849145 в AmoCRM). Если оператор выбрал конкретное
+// значение (не «Другая причина» и не пусто) — доверяем ему напрямую, текст не разбираем.
+// Полный список опций получен из API (GET /api/v4/leads/custom_fields, см. tab=fields_debug) —
+// намеренно НЕ ограничивались значениями из одной выборки сделок, чтобы не пропустить редкие
+// опции вроде «Спам»/«Тест», которые в конкретном экспорте могли не встретиться.
+// isJunk=true → «мусорный лид» (не реальный отказ от покупки, в бизнес-метрику продаж не идёт).
+//
+// Решения по неоднозначным значениям (согласованы с заказчиком 2026-08-18):
+//   • «В ожидание» → «Передумал / отложил решение» (решение ещё не принято, клиент думает)
+//   • «Возврат» → отдельная категория «Возврат» (это не отказ от покупки, а уже состоявшаяся
+//     продажа, которую вернули, — смешивать с обычными отказами некорректно)
+//   • «Пришел но не купил» → «Не понравился ассортимент / модель» (визит состоялся, но товар
+//     не подошёл — по смыслу то же самое, что и обычное «не понравился ассортимент»)
+function stripSp(s) { return (s||'').toLowerCase().replace(/[^a-zа-яё0-9]/g,''); }
+
+// Ключ — enum_id варианта из AmoCRM (см. tab=fields_debug), а НЕ текст: раньше карта была на
+// строках (типа 'тест') и «Тест»/«тест» или «Передумал»/«Передумал / отложил решение» не
+// склеивались в одну категорию при малейшем расхождении в написании самой опции AmoCRM (регистр,
+// опечатка, лишний пробел — эти расхождения бывают в самом списке, а не только в комментариях
+// операторов). enum_id такой проблемы не имеет вообще. textKey — резервный путь на случай, если
+// у какой-то сделки AmoCRM почему-то не прислал enum_id; сравнение там тоже идёт через stripSp().
+const PRICHINA_RULES = [
+  {id:1304877, textKey:'не подошёл размер',                  category:'Нет в наличии / нет нужного размера', isJunk:false},
+  {id:1304879, textKey:'не понравился ассортимент / модель', category:'Не понравился ассортимент / модель',  isJunk:false},
+  {id:1304881, textKey:'передумал / отложил решение',        category:'Передумал / отложил решение',         isJunk:false},
+  {id:1304883, textKey:'не приехал',                         category:'Не приехал / не дошёл',               isJunk:false},
+  {id:1304887, textKey:'в ожидание',                         category:'Передумал / отложил решение',         isJunk:false},
+  {id:1305005, textKey:'дорого',                             category:'Дорого',                              isJunk:false},
+  {id:1320971, textKey:'возврат',                            category:'Возврат',                             isJunk:false},
+  {id:1320973, textKey:'пришел но не купил',                 category:'Не понравился ассортимент / модель',  isJunk:false},
+  {id:1321191, textKey:'уже купил в другом месте',           category:'Уже купил в другом месте',            isJunk:false},
+  {id:1321193, textKey:'передумал',                          category:'Передумал / отложил решение',         isJunk:false},
+  {id:1321195, textKey:'не дозвонились',                     category:'Не дозвонились (финально)',           isJunk:false},
+  {id:1323321, textKey:'спам',                               category:'Спам / реклама',                      isJunk:true},
+  {id:1323323, textKey:'тест',                               category:'Тест',                                isJunk:true}
+  // id:1304885 «Другая причина» намеренно НЕ в списке — для него идём на ШАГ 2 (текст)
+];
+const PRICHINA_BY_ID = {}; PRICHINA_RULES.forEach(function(r){ PRICHINA_BY_ID[r.id]=r; });
+const PRICHINA_BY_TEXT = {}; PRICHINA_RULES.forEach(function(r){ PRICHINA_BY_TEXT[stripSp(r.textKey)]=r; });
+
+// ШАГ 2 — если «Причина» = «Другая причина» или пусто, разбираем «Комментарий отказа» (свободный
+// текст оператора колл-центра) по ключевым словам. ПОРЯДОК ВАЖЕН: правила проверяются по очереди,
+// побеждает первое совпадение. «Дубль» стоит первым намеренно — это явная, однозначная пометка
+// оператора, и без приоритета над «Ошиблись номером» комментарии вида «дубль, сказал не оставлял
+// заявки» уезжали бы не в ту категорию. Сравнение — по строке БЕЗ пробелов/пунктуации (см.
+// stripSp), это гасит разрывы пробелами внутри слов у операторов («не ост авлял заявки»).
+//
+// Откалибровано на реальном экспорте 97 отказов (2026-08-18) — сверено с пользователем построчно.
+// Часть комментариев (единичные, без обобщаемого паттерна, или с опечаткой, которую substring-
+// сравнение не ловит: например «арнду» вместо «аренду») намеренно НЕ покрыты отдельным ключевым
+// словом — заводить под один нетипичный пример узкое правило рискованнее (ложные срабатывания на
+// не связанных комментариях), чем оставить его в «Другая причина». Дополнять список по мере
+// появления НОВЫХ повторяющихся формулировок — больше ничего в коде трогать не нужно.
+const REFUSAL_TEXT_RULES = [
+  {category:'Тест',              isJunk:true,  keywords:['тест']},
+  {category:'Дубль / задвоение', isJunk:false, keywords:['дубль','уже записывались','звонила на себя']},
+  {category:'Спам / реклама',    isJunk:true,  keywords:['спам','реклама']},
+  {category:'Ошиблись номером',  isJunk:true,  keywords:['ошиб','не оставля','номер не найден','не понимаю что за обращен','не в курсе','не помнит']},
+
+  {category:'Другой город / география',            isJunk:false, keywords:['екб','из курска','в ростове','из ростова','другой город']}, // дополнять городами по мере появления; НЕ 'ростов' само по себе — коллизия с «ростовок» (размерная сетка по росту, см. строку 26 калибровочного набора)
+  {category:'Дорого',                              isJunk:false, keywords:['дорог','не устроила цен','цена-качеств','цена качеств']},
+  {category:'Нет в наличии / нет нужного размера', isJunk:false, keywords:['нет в наличи','нет размер','не оказалось','нет таких','нет их','нет того']},
+  {category:'Не понравился ассортимент / модель',  isJunk:false, keywords:['не подходит модел','не нашёл что хотел','не нашел что хотел','не устроил вариант','нет нужной модел','мало ассортимента']},
+  {category:'Уже купил в другом месте',            isJunk:false, keywords:['купил в др месте','купила в','купил в другом месте','неактуально купили','сделал заказ','сделала заказ']},
+  {category:'Не по теме / не наша услуга',         isJunk:false, keywords:['аренда','прокат','интересовался работой','вакансия']},
+  {category:'Не дозвонились (финально)',           isJunk:false, keywords:['игнор','не отвечает']},
+  {category:'Передумал / отложил решение',         isJunk:false, keywords:['передумал','будет думать','не актуально','неактуально','вернет']},
+  {category:'Не приехал / не дошёл',               isJunk:false, keywords:['не приехал','не пришёл','не пришел']}
+];
+
+function classifyByText(comment) {
+  const c = stripSp(comment);
+  if (!c) return {category:'Другая причина', isJunk:false};
+  for (const rule of REFUSAL_TEXT_RULES) {
+    for (const kw of rule.keywords) {
+      if (c.includes(stripSp(kw))) return {category:rule.category, isJunk:rule.isJunk};
+    }
+  }
+  return {category:'Другая причина', isJunk:false};
+}
+
+// Гибридная классификация: ШАГ 1 (поле «Причина», по enum_id) приоритетнее ШАГ 2 (текст).
+function classifyRefusal(prichinaId, prichinaText, comment) {
+  if (prichinaId!=null && PRICHINA_BY_ID[prichinaId]) return PRICHINA_BY_ID[prichinaId];
+  const t = stripSp(prichinaText);
+  if (t && t!==stripSp('другая причина') && PRICHINA_BY_TEXT[t]) return PRICHINA_BY_TEXT[t];
+  return classifyByText(comment);
 }
 
 // Забирает сделки из ВСЕХ реальных воронок (PIPES_ALLOWED) — технические воронки отсекаются
@@ -752,19 +873,35 @@ function buildAmoData(fromTs, toTs) {
     city, channels:Object.values(chans).sort((a,b)=>b.leads-a.leads)
   })).sort((a,b)=>b.channels.reduce((s,c)=>s+c.leads,0)-a.channels.reduce((s,c)=>s+c.leads,0));
 
-  // Причины отказов (только сделки в статусе «Отказ») — [{reason,count,ids}]
-  // Считаем отказом всё, что классифицировано как 'lost' — включая целиком воронку «Условный отказ»
-  // (её сделки лежат в статусе «Клиент в отказе», а не в системном 143).
+  // Причины отказов (только сделки в статусе «Отказ») — гибридная классификация classifyRefusal()
+  // (ШАГ 1: поле «Причина», ШАГ 2: текст «Комментарий отказа»). Считаем отказом всё, что
+  // классифицировано как 'lost' — включая целиком воронку «Условный отказ» (её сделки лежат в
+  // статусе «Клиент в отказе», а не в системном 143); там «Причина»/«Комментарий» обычно не
+  // заполнены, поэтому такие сделки маркируем явно, не гоняя пустой текст через ШАГ 2.
+  // byCity/bySite — для разрезов «Причины отказов» по городам/сайтам на новой вкладке.
   const refMap={};
   for(const l of leads){
     if(classifyLead(l)!=='lost')continue;
-    let reason=getRefusalReason(l.custom_fields_values||[])||'';
-    if(!reason&&l.pipeline_id===PIPE_COND_LOST)reason='Условный отказ';
-    if(!reason)reason='Не указана';
-    if(!refMap[reason])refMap[reason]={count:0,ids:[]};
-    refMap[reason].count++; if(refMap[reason].ids.length<50)refMap[reason].ids.push(l.id);
+    const f=l.custom_fields_values||[];
+    const prichinaId=gfEnumId(f,['причина']);
+    const prichinaText=gf(f,['причина']);
+    const comment=gf(f,['комментарий отказа']);
+    const cls = (prichinaId==null && !prichinaText && !comment && l.pipeline_id===PIPE_COND_LOST)
+      ? {category:'Условный отказ', isJunk:false}
+      : classifyRefusal(prichinaId, prichinaText, comment);
+    const city=normCity(gf(f,['регион','город','city','region']));
+    const site=getSite(f);
+    const key=cls.category;
+    if(!refMap[key])refMap[key]={reason:key,isJunk:cls.isJunk,count:0,byCity:{},bySite:{},ids:[],items:[]};
+    const rm=refMap[key];
+    rm.count++;
+    rm.byCity[city]=(rm.byCity[city]||0)+1;
+    rm.bySite[site]=(rm.bySite[site]||0)+1;
+    // items — для попапа drill-down с текстом комментария (вкладка «Отказы»); ids оставлены
+    // отдельно для обратной совместимости со старым блоком «Причины отказов» на CRM/Воронка.
+    if(rm.ids.length<50){rm.ids.push(l.id); rm.items.push({id:l.id, comment:(comment||'').slice(0,200)});}
   }
-  const refusalReasons=Object.entries(refMap).map(([reason,v])=>({reason,count:v.count,ids:v.ids})).sort((a,b)=>b.count-a.count);
+  const refusalReasons=Object.values(refMap).sort((a,b)=>b.count-a.count);
 
   // Яндекс из CRM
   const ydMap={};
@@ -806,5 +943,6 @@ function buildAmoData(fromTs, toTs) {
   return{total,bought,lost,active,supply,delivery,supplyIds,deliveryIds,
     visitedCount,visitedPct,funnel,faamoFunnel,alfaFunnel,
     managers,geo,geoFlat,sources,yandex,cityChannels,refusalReasons,trendAmo,
-    byPipeline, excludedPipelines:PIPES_EXCLUDED.map(id=>PIPE_NAMES[id])};
+    byPipeline, excludedPipelines:PIPES_EXCLUDED.map(id=>PIPE_NAMES[id]),
+    debugAmoError: total===0 ? lastAmoError : undefined};
 }

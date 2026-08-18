@@ -47,6 +47,58 @@ export function showLeadsPopup(ids, anchorEl, label){
 
   setTimeout(()=>document.addEventListener('click', closeLeadsPopupOnce), 10);
 }
+// Попап drill-down для причин отказов: как showLeadsPopup, но под каждой ссылкой — текст
+// комментария оператора (items = [{id, comment}], пришедшие вместе с refusalReasons из .gs).
+export function showRefusalPopup(items, anchorEl, label){
+  closeLeadsPopup();
+  if(!items || !items.length) return;
+  const pop = document.createElement('div');
+  pop.id = 'leadsPopup';
+  pop.style.cssText = 'position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--br2);border-radius:10px;box-shadow:0 8px 32px #00000040;padding:8px;max-height:360px;overflow-y:auto;min-width:220px;max-width:320px';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:11px;color:var(--tx3);padding:4px 8px 8px;border-bottom:1px solid var(--br);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em';
+  title.textContent = (label||'Сделки') + ' · ' + items.length;
+  pop.appendChild(title);
+
+  items.forEach(({id,comment})=>{
+    const row = document.createElement('a');
+    row.href = amoLead(id);
+    row.target = '_blank';
+    row.style.cssText = 'display:block;padding:6px 8px;border-radius:5px;text-decoration:none;color:inherit';
+    row.onmouseover = ()=>row.style.background='var(--bg3)';
+    row.onmouseout = ()=>row.style.background='transparent';
+    const idEl = document.createElement('div');
+    idEl.style.cssText = 'font-size:12px;color:var(--blue)';
+    idEl.textContent = '#'+id+' →';
+    row.appendChild(idEl);
+    if(comment){
+      const cEl = document.createElement('div');
+      cEl.style.cssText = 'font-size:11px;color:var(--tx2);margin-top:2px;white-space:normal;word-break:break-word';
+      cEl.textContent = comment;
+      row.appendChild(cEl);
+    }
+    pop.appendChild(row);
+  });
+
+  if(items.length>=50){
+    const more = document.createElement('div');
+    more.style.cssText='font-size:10px;color:var(--tx3);padding:6px 8px;text-align:center';
+    more.textContent='показаны первые 50';
+    pop.appendChild(more);
+  }
+
+  document.body.appendChild(pop);
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4, left = r.left;
+  if(left + 320 > window.innerWidth) left = window.innerWidth - 330;
+  if(top + 360 > window.innerHeight) top = Math.max(8, r.top - 364);
+  pop.style.top = top+'px';
+  pop.style.left = left+'px';
+
+  setTimeout(()=>document.addEventListener('click', closeLeadsPopupOnce), 10);
+}
+
 export function closeLeadsPopup(){ const p=document.getElementById('leadsPopup'); if(p)p.remove(); }
 function closeLeadsPopupOnce(e){
   const p=document.getElementById('leadsPopup');
@@ -62,4 +114,25 @@ export function drillNum(count, ids, color){
   }
   const idsAttr = ids.join(',');
   return `<span onclick="event.stopPropagation();showLeadsPopup('${idsAttr}'.split(',').map(Number),this,'Сделки')" style="color:${color||'var(--blue)'};border-bottom:1px dashed currentColor;cursor:pointer" title="Показать ${count} сделок">${count}</span>`;
+}
+
+function escapeAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
+
+// Хранилище items для drillRefusal — передаём индекс через onclick вместо текста комментариев
+// напрямую в HTML-атрибут (там могут быть кавычки/спецсимволы оператора колл-центра).
+const _refusalStore = [];
+
+// Кликабельная цифра причины отказа: попап показывает текст комментария под каждой сделкой.
+export function drillRefusal(count, items, color, label){
+  const c = color || 'inherit';
+  if(!count || !items || !items.length) return `<span style="color:${c}">${count}</span>`;
+  if(items.length === 1){
+    return `<a href="${amoLead(items[0].id)}" target="_blank" style="color:${color||'var(--blue)'};text-decoration:none;border-bottom:1px dashed currentColor" title="${escapeAttr(items[0].comment)||'Открыть сделку'}">${count}</a>`;
+  }
+  const idx = _refusalStore.push(items) - 1;
+  const lbl = (label||'Сделки').replace(/'/g,"\\'");
+  return `<span onclick="event.stopPropagation();showRefusalPopupByIndex(${idx},this,'${lbl}')" style="color:${color||'var(--blue)'};border-bottom:1px dashed currentColor;cursor:pointer" title="Показать ${count} сделок">${count}</span>`;
+}
+export function showRefusalPopupByIndex(idx, anchorEl, label){
+  showRefusalPopup(_refusalStore[idx], anchorEl, label);
 }

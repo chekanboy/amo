@@ -5,6 +5,7 @@ import { renderCalls } from '../tabs/calls.js';
 import { renderMetrika } from '../tabs/metrika.js';
 import { renderDirect } from '../tabs/direct.js';
 import { renderFaamoFunnel, renderSiteFunnel, renderRefusalReasons } from '../components/funnel.js';
+import { renderRefusals } from '../tabs/refusals.js';
 
 export function renderTab(tab){
   const raw = state.raw, prev = state.prev;
@@ -21,6 +22,8 @@ export function renderTab(tab){
     renderMetrika(raw.metrika||{});
   } else if(tab==='direct'){
     renderDirect(raw);
+  } else if(tab==='refusals'){
+    renderRefusals(raw);
   }
 }
 

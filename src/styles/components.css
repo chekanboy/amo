@@ -1,6 +1,7 @@
 /* КОМПОНЕНТЫ: метрики, карточки, воронка, менеджеры, гео, доунаты, таблицы, бейджи, графики */
 /* METRICS */
 .mrow{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:14px}
+.mrow-3{grid-template-columns:repeat(3,1fr)}
 .mc{background:var(--bg2);border:1px solid var(--br);border-radius:12px;padding:13px 15px;box-shadow:var(--shadow)}
 .mlb{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
 .mv{font-size:26px;font-weight:700;line-height:1}
